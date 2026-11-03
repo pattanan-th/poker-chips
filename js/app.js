@@ -13,6 +13,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
+  const NAME_MAX = 100; // only a guard against junk; long names scroll in the player list
   const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   // ?pid= lets several tabs on one device be different players (testing)
   const myId = params.get('pid') || store.get('pk:id') || (() => { const id = rid(); store.set('pk:id', id); return id; })();
@@ -100,7 +101,7 @@
         } else if (msg.t === 'hello') {
           if ((S.removed || []).includes(cid) && !msg.rejoin) { net.send(cid, { t: 'kicked' }); return; }
           S.removed = (S.removed || []).filter((x) => x !== cid);
-          const name = String(msg.name || 'ผู้เล่น').slice(0, 16);
+          const name = String(msg.name || 'ผู้เล่น').slice(0, NAME_MAX);
           const p = pById(cid);
           if (!p) { E.addPlayer(S, cid, name); saveHost(); toast(`${name} เข้าห้องแล้ว`, true); }
           else if (p.name !== name) p.name = name;
@@ -225,7 +226,7 @@
         if (net) { net.send(cmd.pid, { t: 'kicked' }); }
         return;
       case 'move': return E.movePlayer(S, cmd.pid, cmd.dir);
-      case 'rename': { const p = pById(cmd.pid); if (p) p.name = String(cmd.name).slice(0, 16); return; }
+      case 'rename': { const p = pById(cmd.pid); if (p) p.name = String(cmd.name).slice(0, NAME_MAX); return; }
       case 'join': return E.addPlayer(S, myId, myName);
       case 'pause': return E.setPaused(S, cmd.v, t);
       case 'level': {
@@ -337,6 +338,7 @@
     ui.typingRaise = document.activeElement && document.activeElement.id === 'raiseInput';
     const typingPd = document.activeElement && document.activeElement.id === 'pdBetInput';
     $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : isPD() ? pdTable() : table()}</div>` + (isPD() ? pdBottom() : bottomBar(actor)) + sheet();
+    runNames();
     window.scrollTo(0, scrollY);
     const ri = ui.typingRaise && document.getElementById('raiseInput');
     if (ri) { ri.focus(); syncRaise(true); }
@@ -355,7 +357,7 @@
       <p class="center muted">ไพ่จริงบนโต๊ะ · ชิปบนมือถือ</p>
       <div class="card">
         <label>ชื่อของคุณ</label>
-        <input id="name" maxlength="16" value="${esc(myName)}" placeholder="เช่น โจโจ้" autocomplete="nickname">
+        <input id="name" maxlength="${NAME_MAX}" value="${esc(myName)}" placeholder="เช่น โจโจ้" autocomplete="nickname">
       </div>
       ${resume ? `<button class="primary" style="width:100%" data-a="resume" data-code="${esc(resume)}">กลับเข้าห้องเดิม ${esc(resume)} (เจ้ามือ)</button>` : ''}
       ${recentRooms()}
@@ -442,7 +444,7 @@
   }
 
   function lobby() {
-    const list = S.players.map((p, i) => `<div class="pl"><span class="muted">${i + 1}</span><div class="nm"><b>${esc(p.name)}${p.id === myId ? ' <span class="me-tag">(คุณ)</span>' : ''}</b></div>
+    const list = S.players.map((p, i) => `<div class="pl"><span class="muted">${i + 1}</span><div class="nm"><b>${nameHtml(p.name)}${p.id === myId ? ' <span class="me-tag">(คุณ)</span>' : ''}</b></div>
       <span class="dot ${isOnline(p.id) ? 'on' : ''}"></span><div class="stack">${isPD() ? (S.pd && S.pd.bankerId === p.id ? '🏦' : '') : credit() ? '' : fmt(p.stack)}</div></div>`).join('');
     return `<div class="card center">
       <div class="muted small">สแกนเพื่อเข้าห้อง</div>
@@ -538,6 +540,24 @@
     </div>`;
   }
 
+  // Names too long for their row scroll round like a ticker (the name twice, moved left by one
+  // copy). The timing follows the clock, so a re-render picks the motion up where it was.
+  const nameHtml = (name) => `<span class="nmtxt"><span>${esc(name)}</span></span>`;
+  function runNames() {
+    document.querySelectorAll('.nmtxt').forEach((box) => {
+      const inner = box.firstChild;
+      if (inner.scrollWidth - box.clientWidth <= 2) return;
+      const name = inner.textContent;
+      inner.innerHTML = `<i>${esc(name)}</i><i>${esc(name)}</i>`;
+      const step = inner.firstChild.getBoundingClientRect().width;
+      const ms = Math.round(step * 40); // ~25 px a second
+      box.classList.add('run');
+      box.style.setProperty('--dist', `${step}px`);
+      box.style.setProperty('--dur', `${ms}ms`);
+      inner.style.animationDelay = `${-(Date.now() % ms)}ms`;
+    });
+  }
+
   function playerRow(p) {
     const h = S.hand;
     const live = h && !h.done;
@@ -562,7 +582,7 @@
     const won = h && h.done && h.result && h.result[p.id] ? `<div class="won">+${fmt(h.result[p.id])}</div>` : '';
     return `<div class="${cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
+      <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
       <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
@@ -749,7 +769,7 @@
     const editable = canRunRound() && r.phase === 'bet' && !isBanker && !p.sitOut;
     return `<div class="${cls}" ${editable ? `data-a="pdBetFor" data-pid="${esc(p.id)}"` : ''}>
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="คนคุมห้อง">👑</span>' : ''}${isBanker ? ' <span class="badge bank">🏦 เจ้ามือ</span>' : ''}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b>
+      <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="คนคุมห้อง">👑</span>' : ''}${isBanker ? ' <span class="badge bank">🏦 เจ้ามือ</span>' : ''}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b>
         <span class="st">${bet ? `<span class="bet">ลง ${fmt(bet)}</span>` : esc(status)}${editable ? ' <u class="small">แก้</u>' : ''}</span></div>
       <div class="stack ${toneOf(p.net || 0)}">${signedFmt(p.net || 0)}</div>
     </div>`;
@@ -1390,7 +1410,7 @@
       }
       case 'rename': {
         const v = prompt('ชื่อใหม่', myName);
-        if (v && v.trim()) { myName = v.trim().slice(0, 16); store.set('pk:name', myName); send({ c: 'rename', pid: myId, name: myName }); }
+        if (v && v.trim()) { myName = v.trim().slice(0, NAME_MAX); store.set('pk:name', myName); send({ c: 'rename', pid: myId, name: myName }); }
         break;
       }
       case 'stand': {
@@ -1492,7 +1512,7 @@
 
   function readName(optional) {
     const el = document.getElementById('name');
-    const v = (el && el.value || '').trim().slice(0, 16);
+    const v = (el && el.value || '').trim().slice(0, NAME_MAX);
     if (!v && !optional) { toast('ใส่ชื่อก่อน'); el && el.focus(); return false; }
     if (v) { myName = v; store.set('pk:name', v); }
     return true;
