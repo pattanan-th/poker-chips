@@ -517,7 +517,8 @@
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
       ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : ''}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
-      <div class="lastlog" data-a="sheet" data-v="hands">${lastLog}<br><u>ประวัติรายมือ</u></div>`;
+      <div class="lastlog" data-a="sheet" data-v="hands">${lastLog}<br><u>ประวัติรายมือ</u></div>
+      <p class="center small"><u data-a="sheet" data-v="ranks">🏆 อันดับไพ่ (มือไหนชนะ)</u></p>`;
   }
 
   // The host menu items used every few hands, one tap from the table.
@@ -852,7 +853,7 @@
   // ---------- sheets ----------
   function sheet() {
     if (!ui.sheet) return '';
-    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet }[ui.sheet];
+    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet, ranks: ranksSheet }[ui.sheet];
     if (!body) return '';
     const [title, html] = body();
     return `<div class="sheet-bg" data-a="closeSheet"><div class="sheet" data-stop="1">
@@ -868,6 +869,7 @@
         <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
         <button data-a="sheet" data-v="summary">📊 สรุปประจำโต๊ะ</button>
         <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
+        <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
         ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
         <button data-a="rename">✏️ เปลี่ยนชื่อ</button>` : ''}
         <button class="ghost" data-a="leave">ออกจากห้อง</button></div>`];
@@ -883,6 +885,7 @@
       <button data-a="sheet" data-v="handoff">👑 เปลี่ยนเจ้ามือ (ส่งต่อให้คนอื่น)</button>
       <button data-a="sheet" data-v="summary">📊 สรุปผล / เงิน</button>
       <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
+      <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
       <button data-a="goHome">🏠 กลับหน้าแรก (เก็บห้องไว้)</button>
       <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
@@ -906,6 +909,10 @@
     return me.left
       ? `<button class="primary" data-a="cmd" data-c="stand" data-pid="${esc(me.id)}" data-v="">🪑 นั่งกลับ (${chipWord()} ${chips(me)})</button>`
       : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากโต๊ะ (${credit() ? 'ยอด' : 'เก็บชิป'} ${chips(me)})</button>`;
+  }
+
+  function ranksSheet() {
+    return ['อันดับไพ่', `<img class="ranks" src="img/hand-rankings.jpg?v=21" alt="อันดับไพ่โป๊กเกอร์ จาก Royal Flush ถึง High Card">`];
   }
 
   function inviteSheet() {

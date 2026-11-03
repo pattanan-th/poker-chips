@@ -228,3 +228,5 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .gold { color: var(--gold); }
 .pl .shown { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gold); margin-top: 3px; }
 .who .pcs { margin-right: 4px; }
+
+.ranks { display: block; width: 100%; max-width: 420px; margin: 0 auto; border-radius: 12px; }
