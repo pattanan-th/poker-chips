@@ -245,4 +245,27 @@ test('setStack as buy-in tracks extra investment; as correction does not', () =>
   assert.strictEqual(E.invested(s, s.players[0]), 1300);
 });
 
+test('no buy-in (credit): balances start at 0, go negative, never all-in', () => {
+  const s = E.newGame({ sb: 5, bb: 10, credit: true });
+  ['p0', 'p1'].forEach((id) => E.addPlayer(s, id, id));
+  const bal = () => s.players.map((p) => p.stack - E.CREDIT);
+  assert.deepStrictEqual(bal(), [0, 0]);
+  E.startHand(s, 0);
+  const first = s.hand.toAct; const other = first === 'p0' ? 'p1' : 'p0';
+  E.act(s, first, 'raise', 5000);
+  E.act(s, other, 'call');
+  assert.ok(!s.hand.allIn[first] && !s.hand.allIn[other]);
+  E.act(s, other, 'check'); E.act(s, first, 'check');
+  E.act(s, other, 'check'); E.act(s, first, 'check');
+  E.act(s, other, 'check'); E.act(s, first, 'check');
+  E.award(s, [[first]]);
+  const b = bal();
+  assert.strictEqual(b[0] + b[1], 0);
+  assert.strictEqual(Math.abs(b[0]), 5000);
+  assert.throws(() => E.rebuy(s, 'p0'), /Rebuy/);
+  E.setStack(s, 'p0', -120);
+  assert.strictEqual(bal()[0], -120);
+  assert.strictEqual(E.chipText(s, s.players[0].stack), '-120');
+});
+
 console.log(`\n${passed} passed`);

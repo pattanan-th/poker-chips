@@ -20,6 +20,7 @@
         sb: 5, bb: 10, ante: 0, // cash blinds
         buyInValue: 0,          // money per buy-in, for the settlement table
         sessionMin: 0,          // cash: planned session length in minutes (0 = no clock)
+        credit: false,          // cash without buy-in: play on credit, balances go +/- and settle at the end
         levels: DEFAULT_LEVELS,
       }, settings || {}),
       players: [],
@@ -36,6 +37,20 @@
   }
 
   const fail = (msg) => { throw new Error(msg); };
+
+  // Credit play gives everyone a stack too deep to ever go all-in; the balance shown is stack − CREDIT.
+  const CREDIT = 1e9;
+  const isCredit = (s) => s.settings.mode === 'cash' && !!s.settings.credit;
+  const baseStack = (s) => (isCredit(s) ? CREDIT : s.settings.startStack);
+  function chipText(s, stack) {
+    if (!isCredit(s)) return String(stack);
+    const n = stack - CREDIT;
+    return (n > 0 ? '+' : '') + n;
+  }
+  // before the first hand: give everyone the opening stack for the current settings
+  function resetStacks(s) {
+    s.players.forEach((p) => { p.stack = p.bought = baseStack(s); p.buyIns = 1; });
+  }
   const player = (s, id) => s.players.find((p) => p.id === id) || fail('ไม่พบผู้เล่น');
 
   function addLog(s, text) {
@@ -46,7 +61,7 @@
   function addPlayer(s, id, name) {
     if (s.players.some((p) => p.id === id)) return;
     const late = s.settings.mode === 'tournament' && s.handNo > 0;
-    s.players.push({ id, name, stack: s.settings.startStack, buyIns: 1, bought: s.settings.startStack, sitOut: false, out: false });
+    s.players.push({ id, name, stack: baseStack(s), buyIns: 1, bought: baseStack(s), sitOut: false, out: false });
     addLog(s, `${name} เข้าร่วม${late ? ' (late entry)' : ''}`);
   }
 
@@ -364,6 +379,7 @@
   // ---- off-hand admin ----
   function rebuy(s, id) {
     if (inHand(s, id)) fail('Rebuy ได้หลังจบมือ');
+    if (isCredit(s)) fail('โหมดไม่ต้อง buy-in ไม่ต้อง Rebuy');
     const p = player(s, id);
     p.bought = invested(s, p) + s.settings.startStack;
     p.stack += s.settings.startStack;
@@ -378,9 +394,10 @@
   function setStack(s, id, stack, asBuyIn) {
     if (inHand(s, id)) fail('แก้ชิปได้หลังจบมือ');
     const p = player(s, id);
-    stack = Math.max(0, Math.floor(Number(stack) || 0));
-    if (asBuyIn) p.bought = invested(s, p) + stack - p.stack;
-    addLog(s, `${p.name} ชิป ${p.stack} → ${stack} (${asBuyIn ? 'ซื้อ/คืนชิป' : 'แก้โดยเจ้ามือ'})`);
+    // credit play: the value given is the player's +/- balance
+    stack = isCredit(s) ? CREDIT + Math.floor(Number(stack) || 0) : Math.max(0, Math.floor(Number(stack) || 0));
+    if (asBuyIn && !isCredit(s)) p.bought = invested(s, p) + stack - p.stack;
+    addLog(s, `${p.name} ${isCredit(s) ? 'ยอด' : 'ชิป'} ${chipText(s, p.stack)} → ${chipText(s, stack)} (${asBuyIn ? 'ซื้อ/คืนชิป' : 'แก้โดยเจ้ามือ'})`);
     p.stack = stack;
     if (stack > 0) { p.out = false; s.finishOrder = s.finishOrder.filter((x) => x !== id); }
   }
@@ -398,7 +415,7 @@
     if (v && h && !h.done && h.ids.includes(id) && !h.folded[id]) fail('ลุกได้หลังจบมือ หรือหลัง Fold');
     p.left = !!v;
     if (!v) p.sitOut = false;
-    addLog(s, v ? `${p.name} ลุกจากโต๊ะ (ชิป ${p.stack})` : `${p.name} กลับมานั่ง`);
+    addLog(s, v ? `${p.name} ลุกจากโต๊ะ (${isCredit(s) ? 'ยอด' : 'ชิป'} ${chipText(s, p.stack)})` : `${p.name} กลับมานั่ง`);
   }
 
   function streetName(st) {
@@ -408,7 +425,7 @@
   const Engine = {
     STREETS, DEFAULT_LEVELS, newGame, addPlayer, removePlayer, movePlayer, startHand, act, award,
     rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, sessionRemainingMs, blinds, potTotal, computePots,
-    eligible, inHand, streetName, invested,
+    eligible, inHand, streetName, invested, CREDIT, isCredit, chipText, resetStacks,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
   else root.Engine = Engine;

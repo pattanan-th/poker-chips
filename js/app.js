@@ -33,6 +33,11 @@
   const fmt = (n) => Number(n || 0).toLocaleString('en-US');
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const pById = (id) => S && S.players.find((p) => p.id === id);
+  // cash without buy-in: show each player's +/- balance instead of a chip count
+  const credit = () => !!S && E.isCredit(S);
+  const balance = (p) => p.stack - E.CREDIT;
+  const chips = (p) => (credit() ? signedFmt(balance(p)) : fmt(p.stack));
+  const chipWord = () => (credit() ? 'ยอด' : 'ชิป');
   const now = () => Date.now() + clockSkew;
   const isHost = () => role === 'host';
   const joinUrl = () => location.origin + location.pathname + '?room=' + code;
@@ -213,7 +218,8 @@
       case 'settings': {
         const old = S.settings;
         S.settings = Object.assign({}, old, cmd.settings);
-        if (S.handNo === 0 && S.settings.startStack !== old.startStack) S.players.forEach((p) => { p.stack = p.bought = S.settings.startStack; });
+        if (S.handNo > 0) S.settings.credit = !!old.credit; // can't switch buy-in style mid-game
+        else if (S.settings.startStack !== old.startStack || !!S.settings.credit !== !!old.credit || S.settings.mode !== old.mode) E.resetStacks(S);
         if (S.settings.mode !== old.mode && S.handNo === 0) { S.level = 0; S.levelStart = null; S.pausedAt = null; }
         // cash clock: changing the length mid-game restarts the countdown from now
         if (S.settings.mode === 'cash' && (S.settings.sessionMin || 0) !== (old.sessionMin || 0)) {
@@ -415,7 +421,7 @@
 
   function lobby() {
     const list = S.players.map((p, i) => `<div class="pl"><span class="muted">${i + 1}</span><div class="nm"><b>${esc(p.name)}${p.id === myId ? ' <span class="me-tag">(คุณ)</span>' : ''}</b></div>
-      <span class="dot ${isOnline(p.id) ? 'on' : ''}"></span><div class="stack">${isPD() ? (S.pd && S.pd.bankerId === p.id ? '🏦' : '') : fmt(p.stack)}</div></div>`).join('');
+      <span class="dot ${isOnline(p.id) ? 'on' : ''}"></span><div class="stack">${isPD() ? (S.pd && S.pd.bankerId === p.id ? '🏦' : '') : credit() ? '' : fmt(p.stack)}</div></div>`).join('');
     return `<div class="card center">
       <div class="muted small">สแกนเพื่อเข้าห้อง</div>
       <div class="qr">${qrSvg(joinUrl())}</div>
@@ -423,7 +429,7 @@
       <div class="link">${esc(joinUrl())}</div>
     </div>
     <div class="card">
-      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ชิปเริ่ม ${fmt(S.settings.startStack)}`}</h2>
+      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}`}</h2>
       <div class="players">${list || '<p class="muted">ยังไม่มีผู้เล่น</p>'}</div>
       ${isHost() ? `<p class="muted small">${isPD() ? 'คนแรกในรายการเป็นเจ้ามือป๊อกเด้ง (🏦) เปลี่ยนได้ทีหลัง' : 'เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)'}</p>
         <div class="grid2"><button data-a="sheet" data-v="settings">ตั้งค่า</button><button class="primary" data-a="cmd" data-c="start" ${S.players.length < 2 ? 'disabled' : ''}>เริ่มเกม</button></div>`
@@ -482,13 +488,13 @@
     const lastLog = S.log.slice(-2).map(esc).join('<br>');
     const me = pById(myId);
     const away = S.players.filter((p) => p.left);
-    const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ชิป ${fmt(me.stack)}</span>
+    const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ${chipWord()} ${chips(me)}</span>
       <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
     const timeUp = ui.timeUp ? `<div class="banner row"><span>⏰ หมดเวลาเล่นแล้ว — เล่นมือนี้ให้จบแล้วดูว่าใครโอนให้ใคร</span>
       <button class="primary sm" style="flex:none" data-a="sheet" data-v="summary">💸 สรุป</button></div>` : '';
     return `${timeUp}${standBanner}<div class="card pot">${potHtml}</div>${hostTools()}
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
-      ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${fmt(p.stack)}</b>`).join(' · ')}</div>` : ''}
+      ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : ''}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
       <div class="lastlog" data-a="sheet" data-v="hands">${lastLog}<br><u>ประวัติรายมือ</u></div>`;
   }
@@ -533,7 +539,7 @@
     return `<div class="${cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
       <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span></div>
-      <div class="stack">${fmt(p.stack)}${bet ? '<br>' + bet : ''}${won}</div>
+      <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
 
@@ -554,7 +560,7 @@
     let inner = '';
     if (!h || h.done) {
       const me = pById(myId);
-      const rebuy = me && S.settings.mode === 'cash' && me.stack === 0 ? `<button class="blue" data-a="cmd" data-c="rebuy" data-pid="${esc(myId)}">Rebuy +${fmt(S.settings.startStack)}</button>` : '';
+      const rebuy = me && S.settings.mode === 'cash' && !credit() && me.stack === 0 ? `<button class="blue" data-a="cmd" data-c="rebuy" data-pid="${esc(myId)}">Rebuy +${fmt(S.settings.startStack)}</button>` : '';
       if (isHost()) {
         const over = S.settings.mode === 'tournament' && E.eligible(S).length < 2 && S.handNo > 0;
         inner = over ? `<div class="grid2">${rebuy || ''}<button class="primary" data-a="sheet" data-v="summary">🏆 สรุปผล</button></div>`
@@ -580,22 +586,23 @@
     let raise = '';
     if (ui.raiseOpen && a.canRaise) {
       const q = (f) => Math.round(S.hand.currentBet + (a.pot + a.toCall) * f);
-      const quick = [['Min', a.minTo], ['½ Pot', q(0.5)], ['¾ Pot', q(0.75)], ['Pot', q(1)], ['All-in', a.maxTo]]
+      const quick = [['Min', a.minTo], ['½ Pot', q(0.5)], ['¾ Pot', q(0.75)], ['Pot', q(1)]].concat(credit() ? [['2× Pot', q(2)]] : [['All-in', a.maxTo]])
         .map(([l, v]) => `<button data-a="quick" data-v="${Math.max(a.minTo, Math.min(a.maxTo, v))}">${l}</button>`).join('');
       const step = S.hand.bb;
+      const rangeMax = credit() ? Math.max(a.minTo + step * 10, q(2)) : a.maxTo;
       raise = `<div class="raise">
         <div class="amt"><span class="muted small">${a.isBet ? 'Bet' : 'Raise to'}</span>
           <input id="raiseInput" type="number" inputmode="numeric" enterkeyhint="done" min="${a.minTo}" max="${a.maxTo}" value="${ui.raiseTo}" aria-label="จำนวนชิป"></div>
-        <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fmt(a.minTo)} · สูงสุด ${fmt(a.maxTo)} (All-in)</div>
+        <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fmt(a.minTo)}${credit() ? ' · ไม่จำกัดสูงสุด' : ` · สูงสุด ${fmt(a.maxTo)} (All-in)`}</div>
         <div class="row"><button class="sm" style="flex:none" data-a="step" data-v="${-step}">−</button>
-          <input type="range" id="raiseRange" min="${a.minTo}" max="${a.maxTo}" step="1" value="${ui.raiseTo}">
+          <input type="range" id="raiseRange" min="${a.minTo}" max="${rangeMax}" step="1" value="${ui.raiseTo}">
           <button class="sm" style="flex:none" data-a="step" data-v="${step}">+</button></div>
         <div class="quick">${quick}</div>
         <button class="primary" style="width:100%;padding:16px" data-a="act" data-t="raise" id="raiseGo">ยืนยัน ${a.isBet ? 'Bet' : 'Raise to'} ${fmt(ui.raiseTo)}</button>
       </div>`;
     }
     return `<div class="actbar"><div class="in">
-      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : '<b>ถึงตาคุณ!</b>'}</span><span>ชิป ${fmt(a.p.stack)}${a.toCall ? ` · ต้อง call ${fmt(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
+      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : '<b>ถึงตาคุณ!</b>'}</span><span>${chipWord()} ${chips(a.p)}${a.toCall ? ` · ต้อง call ${fmt(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
       <div class="btns"><button class="danger" data-a="act" data-t="fold">Fold</button>${callBtn}${raiseBtn}</div>
       ${raise}
     </div></div>`;
@@ -850,8 +857,8 @@
         : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากวง (ยอด ${signedFmt(me.net || 0)})</button>`;
     }
     return me.left
-      ? `<button class="primary" data-a="cmd" data-c="stand" data-pid="${esc(me.id)}" data-v="">🪑 นั่งกลับ (ชิป ${fmt(me.stack)})</button>`
-      : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากโต๊ะ (เก็บชิป ${fmt(me.stack)})</button>`;
+      ? `<button class="primary" data-a="cmd" data-c="stand" data-pid="${esc(me.id)}" data-v="">🪑 นั่งกลับ (${chipWord()} ${chips(me)})</button>`
+      : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากโต๊ะ (${credit() ? 'ยอด' : 'เก็บชิป'} ${chips(me)})</button>`;
   }
 
   function inviteSheet() {
@@ -873,12 +880,19 @@
     return ['ตั้งค่า', `
       <label>รูปแบบเกม${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
       <select id="s_mode" ${locked ? 'disabled' : ''}><option value="cash" ${st.mode === 'cash' ? 'selected' : ''}>Cash game</option><option value="tournament" ${st.mode === 'tournament' ? 'selected' : ''}>Tournament</option></select>
-      <label>ชิปเริ่มต้น / ต่อ 1 buy-in${locked ? ' (มีผลกับ Rebuy ครั้งต่อไป)' : ''}</label><input id="s_stack" type="number" inputmode="numeric" value="${st.startStack}">
+      <div id="buyInBox" ${st.mode === 'cash' ? '' : 'hidden'}>
+        <label>Buy-in${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
+        <input type="hidden" id="s_credit" value="${st.credit ? 1 : 0}">
+        <div class="seg" id="creditSeg">${[[0, 'ซื้อชิปก่อนเล่น'], [1, 'ไม่ต้อง buy-in (+/-)']].map(([v, l]) => `<button class="${(st.credit ? 1 : 0) === v ? 'on' : ''}" data-a="creditMode" data-v="${v}" ${locked ? 'disabled' : ''}>${l}</button>`).join('')}</div>
+        <p class="muted small" id="creditHint" ${st.credit ? '' : 'hidden'}>ทุกคนเริ่มที่ 0 ลงได้ไม่จำกัด ยอดติดลบได้ (ไม่มี All-in) จบเกมดูสรุปว่าใครโอนให้ใคร</p>
+      </div>
+      <div id="stackBox" ${st.mode === 'cash' && st.credit ? 'hidden' : ''}><label>ชิปเริ่มต้น / ต่อ 1 buy-in${locked ? ' (มีผลกับ Rebuy ครั้งต่อไป)' : ''}</label><input id="s_stack" type="number" inputmode="numeric" value="${st.startStack}"></div>
       <div id="cashBox" ${st.mode === 'cash' ? '' : 'hidden'}>
         <div class="grid3"><div><label>SB</label><input id="s_sb" type="number" inputmode="numeric" value="${st.sb}"></div>
         <div><label>BB</label><input id="s_bb" type="number" inputmode="numeric" value="${st.bb}"></div>
         <div><label>Ante</label><input id="s_ante" type="number" inputmode="numeric" value="${st.ante || 0}"></div></div>
-        <label>มูลค่าเงินต่อ 1 buy-in (บาท, ใส่ 0 ถ้าไม่ใช้)</label><input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}">
+        <div id="moneyBuyIn" ${st.credit ? 'hidden' : ''}><label>มูลค่าเงินต่อ 1 buy-in (บาท, ใส่ 0 ถ้าไม่ใช้)</label><input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}"></div>
+        <div id="moneyCredit" ${st.credit ? '' : 'hidden'}><label>1 ชิป = กี่บาท (ใส่ 0 ถ้าไม่ใช้)</label><input id="s_rate" type="number" inputmode="decimal" step="any" min="0" value="${st.chipBaht || 0}"></div>
         <label>⏰ เวลาเล่น</label>
         <div class="seg" id="sessionSeg">${[0, 60, 90, 120, 180].map((m) => `<button class="${(st.sessionMin || 0) === m ? 'on' : ''}" data-a="sessionPreset" data-v="${m}">${m ? m / 60 + ' ชม.' : 'ไม่จำกัด'}</button>`).join('')}</div>
         <div class="row sessioncustom"><span>หรือกำหนดเอง</span><input id="s_session" type="number" inputmode="numeric" min="0" value="${st.sessionMin || 0}"><span>นาที</span></div>
@@ -923,19 +937,19 @@
     if (isPD()) return pdPlayersSheet();
     const rows = S.players.map((p, i) => {
       const busy = E.inHand(S, p.id);
-      return `<div class="prow"><div class="top"><b>${i + 1}. ${esc(p.name)}${p.id === myId ? ' (คุณ)' : ''}${p.left ? ' <span class="muted small">· ลุกแล้ว</span>' : ''}</b><span>${fmt(p.stack)} <span class="muted small">· buy-in ${p.buyIns}</span></span></div>
+      return `<div class="prow"><div class="top"><b>${i + 1}. ${esc(p.name)}${p.id === myId ? ' (คุณ)' : ''}${p.left ? ' <span class="muted small">· ลุกแล้ว</span>' : ''}</b><span class="${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${credit() ? '' : ` <span class="muted small">· buy-in ${p.buyIns}</span>`}</span></div>
       <div class="acts">
         <button class="sm" data-a="cmd" data-c="move" data-pid="${esc(p.id)}" data-d="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
         <button class="sm" data-a="cmd" data-c="move" data-pid="${esc(p.id)}" data-d="1" ${i === S.players.length - 1 ? 'disabled' : ''}>↓</button>
-        <button class="sm" data-a="cmd" data-c="rebuy" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>Rebuy</button>
-        <button class="sm" data-a="setStack" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>แก้ชิป</button>
+        ${credit() ? '' : `<button class="sm" data-a="cmd" data-c="rebuy" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>Rebuy</button>`}
+        <button class="sm" data-a="setStack" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>แก้${chipWord()}</button>
         <button class="sm" data-a="cmd" data-c="sitout" data-pid="${esc(p.id)}" data-v="${p.sitOut ? '' : '1'}" ${p.left ? 'disabled' : ''}>${p.sitOut ? 'กลับมาเล่น' : 'พัก'}</button>
         ${p.left ? `<button class="sm primary" data-a="cmd" data-c="stand" data-pid="${esc(p.id)}" data-v="">นั่งกลับ</button>`
           : `<button class="sm" data-a="stand" data-pid="${esc(p.id)}">ลุก</button>`}
         <button class="sm danger" data-a="remove" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>ลบ</button>
       </div></div>`;
     }).join('');
-    return ['ผู้เล่น', `<p class="muted small" style="margin-top:0">ลำดับในรายการ = ลำดับที่นั่งเวียนตามเข็มนาฬิกา · แก้ชิป/Rebuy/ลบ ได้เมื่อคนนั้นไม่ได้อยู่ในมือที่กำลังเล่น</p>${rows}`];
+    return ['ผู้เล่น', `<p class="muted small" style="margin-top:0">ลำดับในรายการ = ลำดับที่นั่งเวียนตามเข็มนาฬิกา · ${credit() ? 'แก้ยอด/ลบ' : 'แก้ชิป/Rebuy/ลบ'} ได้เมื่อคนนั้นไม่ได้อยู่ในมือที่กำลังเล่น</p>${rows}`];
   }
 
   // Fewest transfers that settle everyone: biggest loser pays biggest winner first.
@@ -954,6 +968,34 @@
     return out;
   }
 
+  function transfersHtml(owed, unit) {
+    const tx = settle(owed);
+    return tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${fmt(t.amt)} ${unit}</b></div>`).join('')
+      : `<p class="muted small">${owed.some((o) => o.amt) ? 'คำนวณการโอนไม่ได้ เพราะยอดรวมไม่ลงตัว (ดูหมายเหตุด้านล่าง)' : 'ยังไม่มีใครได้หรือเสีย'}</p>`;
+  }
+
+  // no buy-in: everyone started at 0, so the balance is the profit/loss
+  function creditSummary() {
+    const rate = S.settings.chipBaht || 0;
+    const baht = (n) => Math.round(n * rate);
+    const data = S.players.map((p) => ({ p, net: balance(p) })).sort((a, b) => b.net - a.net);
+    const rows = data.map(({ p, net }) => `<tr><td>${esc(p.name)}${p.left ? ' 🚪' : ''}</td>
+      <td class="${toneOf(net)}"><b>${signedFmt(net)}</b></td>${rate ? `<td class="${toneOf(net)}">${signedFmt(baht(net))}</td>` : ''}</tr>`).join('');
+    const inPot = S.hand && !S.hand.done ? E.potTotal(S.hand) : 0;
+    const sum = data.reduce((a, x) => a + x.net, 0) + inPot;
+    const totals = `<tr class="total"><td>รวมทั้งโต๊ะ${inPot ? `<div class="sub">+ ใน pot ${fmt(inPot)}</div>` : ''}</td>
+      <td class="${toneOf(sum)}">${sum ? signedFmt(sum) : '✓ ลงตัว'}</td>${rate ? '<td></td>' : ''}</tr>`;
+    const owed = data.map(({ p, net }) => ({ name: p.name, amt: rate ? baht(net) : net }));
+    const unit = rate ? 'บาท' : 'ชิป';
+    const off = inPot ? 0 : owed.reduce((a, o) => a + o.amt, 0);
+    return ['สรุปประจำโต๊ะ', `<p class="muted small" style="margin-top:0">ไม่ต้อง buy-in · ทุกคนเริ่มที่ 0 แล้วได้/เสียตามที่เล่น</p>
+      <table class="summary"><tr><th>ผู้เล่น</th><th>ได้/เสีย (ชิป)</th>${rate ? '<th>บาท</th>' : ''}</tr>${rows}${totals}</table>
+      <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${transfersHtml(owed, unit)}
+      ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${fmt(off)} ${unit} (มีการแก้ยอด${rate ? ' หรือปัดเศษ' : ''})</p>` : ''}
+      ${inPot ? '<p class="muted small">* มือนี้ยังไม่จบ ชิปที่อยู่ใน pot ยังไม่ถูกนับ</p>' : ''}
+      ${rate ? '' : '<p class="muted small">ตั้ง "1 ชิป = กี่บาท" ในตั้งค่า เพื่อให้คำนวณเป็นบาท</p>'}`];
+  }
+
   function summarySheet() {
     const st = S.settings;
     if (isPD()) return pdSummarySheet();
@@ -963,6 +1005,7 @@
       const rows = alive.concat(outs).map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}</td><td>${p.out ? 'ตกรอบ' : fmt(p.stack)}</td></tr>`).join('');
       return ['อันดับ', `<table><tr><th>ผู้เล่น</th><th>ชิป</th></tr>${rows}</table>`];
     }
+    if (credit()) return creditSummary();
     const money = st.buyInValue > 0;
     const baht = (chips) => Math.round(chips / st.startStack * st.buyInValue);
     const signed = (n) => `${n > 0 ? '+' : ''}${fmt(n)}`;
@@ -987,10 +1030,8 @@
       <td class="${tone(tOut + inPot - tIn)}">${tOut + inPot === tIn ? '✓ ลงตัว' : signed(tOut + inPot - tIn)}</td></tr>`;
     const owed = data.map(({ p, net, cash }) => ({ name: p.name, amt: money ? cash : net }));
     const unit = money ? 'บาท' : 'ชิป';
-    const tx = settle(owed);
     const off = owed.reduce((a, o) => a + o.amt, 0);
-    const txHtml = tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${fmt(t.amt)} ${unit}</b></div>`).join('')
-      : `<p class="muted small">${owed.some((o) => o.amt) ? 'คำนวณการโอนไม่ได้ เพราะยอดรวมไม่ลงตัว (ดูหมายเหตุด้านล่าง)' : 'ยังไม่มีใครได้หรือเสีย'}</p>`;
+    const txHtml = transfersHtml(owed, unit);
     return ['สรุปประจำโต๊ะ', `<table class="summary"><tr><th>ผู้เล่น</th><th>เข้า</th><th>ออก</th><th>กำไร/ขาดทุน</th></tr>${rows}${totals}</table>
       <p class="muted small" style="margin:6px 0 0">เข้า = ชิปที่ซื้อทั้งหมด (รวม Rebuy) · ออก = ชิปที่ถืออยู่ตอนนี้ หรือตอนลุกจากโต๊ะ</p>
       <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${txHtml}
@@ -1083,9 +1124,22 @@
   document.addEventListener('change', (e) => {
     if (e.target.id === 's_mode') {
       document.getElementById('cashBox').hidden = e.target.value !== 'cash';
+      document.getElementById('buyInBox').hidden = e.target.value !== 'cash';
       document.getElementById('tourBox').hidden = e.target.value !== 'tournament';
+      markCredit();
     }
   });
+
+  // settings sheet: show the fields that apply to buy-in or no-buy-in cash games
+  function markCredit() {
+    const v = Number(document.getElementById('s_credit').value);
+    const on = v === 1 && document.getElementById('s_mode').value === 'cash';
+    document.querySelectorAll('#creditSeg button').forEach((b) => b.classList.toggle('on', Number(b.dataset.v) === v));
+    document.getElementById('creditHint').hidden = !on;
+    document.getElementById('stackBox').hidden = on;
+    document.getElementById('moneyBuyIn').hidden = on;
+    document.getElementById('moneyCredit').hidden = !on;
+  }
 
   // highlight the preset matching the minutes box (none for a custom value)
   function markSessionSeg() {
@@ -1212,6 +1266,11 @@
       case 'award': send({ c: 'award', winners: ui.sd }); break;
       case 'setStack': {
         const p = pById(d.pid);
+        if (credit()) {
+          const v = prompt(`ยอดได้/เสียของ ${p.name} (ติดลบ = เสีย)`, balance(p));
+          if (v != null && v !== '' && !isNaN(Number(v)) && Number(v) !== balance(p)) send({ c: 'stack', pid: d.pid, v: Number(v) });
+          break;
+        }
         const v = prompt(`ชิปของ ${p.name}`, p.stack);
         if (v == null || v === '' || Number(v) === p.stack) break;
         // in cash games the settlement needs to know whether money changed hands
@@ -1232,7 +1291,7 @@
       case 'stand': {
         const p = pById(d.pid);
         const who = p.id === myId ? 'คุณ' : p.name;
-        const msg = isPD() ? `${who}จะลุกจากวง? (ยอด ${signedFmt(p.net || 0)} ยังเก็บไว้ในสรุป)` : `${who}จะลุกจากโต๊ะพร้อมชิป ${fmt(p.stack)}?\nไม่ถูกแจกไพ่จนกว่าจะกด "นั่งกลับ"`;
+        const msg = isPD() ? `${who}จะลุกจากวง? (ยอด ${signedFmt(p.net || 0)} ยังเก็บไว้ในสรุป)` : `${who}จะลุกจากโต๊ะพร้อม${chipWord()} ${chips(p)}?\nไม่ถูกแจกไพ่จนกว่าจะกด "นั่งกลับ"`;
         if (confirm(msg)) { ui.sheet = null; send({ c: 'stand', pid: d.pid, v: true }); }
         break;
       }
@@ -1284,6 +1343,7 @@
         startHost(code, S, [], true);
         break;
       }
+      case 'creditMode': document.getElementById('s_credit').value = d.v; markCredit(); break;
       case 'sessionPreset': document.getElementById('s_session').value = d.v; markSessionSeg(); break;
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;
       case 'saveSettings': saveSettings(); break;
@@ -1330,7 +1390,8 @@
     const mode = document.getElementById('s_mode').value;
     const settings = { mode, startStack: num('s_stack') || 1000 };
     if (mode === 'cash') {
-      Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: num('s_session') });
+      Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: num('s_session'),
+        credit: document.getElementById('s_credit').value === '1', chipBaht: Math.max(0, Number(document.getElementById('s_rate').value) || 0) });
       if (!settings.bb || settings.sb > settings.bb) return toast('Blind ไม่ถูกต้อง');
     } else {
       const levels = readLevels();
