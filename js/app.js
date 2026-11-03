@@ -167,6 +167,7 @@
 
   function apply(cmd, from) {
     const fromHost = from === myId;
+    let before = null;
     try {
       if (!cmd || typeof cmd !== 'object') throw new Error('คำสั่งไม่ถูกต้อง');
       if (handingOff) throw new Error('กำลังเปลี่ยนเจ้ามือ รอสักครู่แล้วกดใหม่');
@@ -184,7 +185,7 @@
         S.hostId = myId; // snapshots taken before a handoff name the previous host
         toast('ย้อนกลับ 1 ขั้นแล้ว', true);
       } else {
-        const before = JSON.stringify(S);
+        before = JSON.stringify(S);
         run(cmd);
         if (isPD()) PD.tidy(S);
         Cards.sync(S, secrets, E);
@@ -194,6 +195,7 @@
       S.seq = seq;
       saveHost(); broadcast(); render();
     } catch (e) {
+      if (before) S = JSON.parse(before);
       if (fromHost) toast(e.message); else net.send(from, { t: 'err', msg: e.message });
     }
   }
@@ -232,6 +234,7 @@
       }
       case 'settings': {
         const old = S.settings;
+        if (S.hand && !S.hand.done && cmd.settings.game != null && cmd.settings.game !== (old.game || 'nlh')) throw new Error('เปลี่ยนเกมได้หลังจบมือ');
         if (S.hand && !S.hand.done && cmd.settings.appCards != null && !!cmd.settings.appCards !== !!old.appCards) throw new Error('เปลี่ยนแบบไพ่ได้หลังจบมือ');
         S.settings = Object.assign({}, old, cmd.settings);
         if (S.handNo > 0) S.settings.credit = !!old.credit; // can't switch buy-in style mid-game
@@ -304,11 +307,12 @@
     const h = S.hand; const p = pById(id);
     const bet = h.bets[id] || 0;
     const toCall = Math.max(0, h.currentBet - bet);
-    const maxTo = bet + p.stack;
+    const allTo = bet + p.stack;
+    const maxTo = E.raiseCap(S, id);
     const minTo = Math.min(h.currentBet + h.minRaise, maxTo);
     const canRaise = maxTo > h.currentBet && !h.noRaise[id] && p.stack > toCall;
     const pot = E.potTotal(h);
-    return { p, bet, toCall, maxTo, minTo, canRaise, pot, isBet: h.currentBet === 0 };
+    return { p, bet, toCall, maxTo, minTo, canRaise, pot, isBet: h.currentBet === 0, plo: h.game === 'plo', capped: maxTo < allTo };
   }
 
   // ---------- render ----------
@@ -445,7 +449,7 @@
       <div class="link">${esc(joinUrl())}</div>
     </div>
     <div class="card">
-      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
+      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${S.settings.game === 'plo' ? 'PLO · ' : ''}${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
       <div class="players">${list || '<p class="muted">ยังไม่มีผู้เล่น</p>'}</div>
       ${isHost() ? `<p class="muted small">${isPD() ? 'คนแรกในรายการเป็นเจ้ามือป๊อกเด้ง (🏦) เปลี่ยนได้ทีหลัง' : 'เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)'}</p>
         <div class="grid2"><button data-a="sheet" data-v="settings">ตั้งค่า</button><button class="primary" data-a="cmd" data-c="start" ${S.players.length < 2 ? 'disabled' : ''}>เริ่มเกม</button></div>`
@@ -496,10 +500,10 @@
         <div class="hint">${Object.entries(h.result || {}).map(([id, a]) => `${esc((pById(id) || {}).name)} ได้ ${fmt(a)}`).join(' · ')}</div>`;
     } else {
       const hint = h.appCards ? '' : h.street === 'showdown' ? (h.runout ? 'เปิดไพ่กลางให้ครบ 5 ใบ แล้วหงายไพ่' : 'หงายไพ่ — เจ้ามือเลือกผู้ชนะ')
-        : { flop: 'ดีลเลอร์เปิด Flop 3 ใบ', turn: 'ดีลเลอร์เปิด Turn', river: 'ดีลเลอร์เปิด River', preflop: 'แจกไพ่คนละ 2 ใบ' }[h.street];
+        : { flop: 'ดีลเลอร์เปิด Flop 3 ใบ', turn: 'ดีลเลอร์เปิด Turn', river: 'ดีลเลอร์เปิด River', preflop: `แจกไพ่คนละ ${h.game === 'plo' ? 4 : 2} ใบ` }[h.street];
       const side = h.pots && h.pots.length > 1 ? `<div class="sidepots">${h.pots.map((p, i) => `${i ? 'Side ' + i : 'Main'} ${fmt(p.amount)}`).join(' · ')}</div>` : '';
       potHtml = `<div class="lbl">Pot · มือที่ ${h.no}</div><div class="amt">${fmt(pot)}</div>${side}
-        <span class="street">${E.streetName(h.street)}</span>${hint ? `<div class="hint">${hint}</div>` : ''}`;
+        <span class="street">${E.streetName(h.street)}${h.game === 'plo' ? ' · PLO' : ''}</span>${hint ? `<div class="hint">${hint}</div>` : ''}`;
     }
     if (h && h.appCards) potHtml += boardHtml(h.board || []);
     const lastLog = S.log.slice(-2).map(esc).join('<br>');
@@ -577,12 +581,12 @@
     const h = S.hand; const cards = myHole();
     if (!h || !cards) return '';
     const folded = h.folded[myId];
-    const made = !folded && h.board && h.board.length >= 3 ? Cards.best(cards.concat(h.board)) : null;
+    const made = !folded && h.board && h.board.length >= 3 ? Cards.bestFor(cards, h.board, h.game) : null;
     if (ui.holeHidden) {
       return `<div class="card mycards hidden" data-a="holeHide"><span class="pcs">${cardHtml(null, 'lg')}${cardHtml(null, 'lg')}</span><span class="muted small">ไพ่ของคุณ · แตะเพื่อดู</span></div>`;
     }
     return `<div class="card mycards ${folded ? 'fold' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg')}
-      <span class="small"><b>ไพ่ของคุณ</b>${folded ? ' · Fold แล้ว' : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
+      <span class="small"><b>ไพ่ของคุณ</b>${h.game === 'plo' ? ' <span class="muted">(ใช้ 2 ใบ + กลาง 3 ใบ)</span>' : ''}${folded ? ' · Fold แล้ว' : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
   }
 
   function showdown() {
@@ -629,14 +633,14 @@
     let raise = '';
     if (ui.raiseOpen && a.canRaise) {
       const q = (f) => Math.round(S.hand.currentBet + (a.pot + a.toCall) * f);
-      const quick = [['Min', a.minTo], ['½ Pot', q(0.5)], ['¾ Pot', q(0.75)], ['Pot', q(1)]].concat(credit() ? [['2× Pot', q(2)]] : [['All-in', a.maxTo]])
+      const quick = [['Min', a.minTo], ['½ Pot', q(0.5)], ['¾ Pot', q(0.75)], ['Pot', q(1)]].concat(a.plo ? [] : credit() ? [['2× Pot', q(2)]] : [['All-in', a.maxTo]])
         .map(([l, v]) => `<button data-a="quick" data-v="${Math.max(a.minTo, Math.min(a.maxTo, v))}">${l}</button>`).join('');
       const step = S.hand.bb;
-      const rangeMax = credit() ? Math.max(a.minTo + step * 10, q(2)) : a.maxTo;
+      const rangeMax = credit() && !a.plo ? Math.max(a.minTo + step * 10, q(2)) : a.maxTo;
       raise = `<div class="raise">
         <div class="amt"><span class="muted small">${a.isBet ? 'Bet' : 'Raise to'}</span>
           <input id="raiseInput" type="number" inputmode="numeric" enterkeyhint="done" min="${a.minTo}" max="${a.maxTo}" value="${ui.raiseTo}" aria-label="จำนวนชิป"></div>
-        <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fmt(a.minTo)}${credit() ? ' · ไม่จำกัดสูงสุด' : ` · สูงสุด ${fmt(a.maxTo)} (All-in)`}</div>
+        <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fmt(a.minTo)}${a.capped ? ` · สูงสุด ${fmt(a.maxTo)} (Pot)` : credit() ? ' · ไม่จำกัดสูงสุด' : ` · สูงสุด ${fmt(a.maxTo)} (All-in)`}</div>
         <div class="row"><button class="sm" style="flex:none" data-a="step" data-v="${-step}">−</button>
           <input type="range" id="raiseRange" min="${a.minTo}" max="${rangeMax}" step="1" value="${ui.raiseTo}">
           <button class="sm" style="flex:none" data-a="step" data-v="${step}">+</button></div>
@@ -923,10 +927,14 @@
     return ['ตั้งค่า', `
       <label>รูปแบบเกม${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
       <select id="s_mode" ${locked ? 'disabled' : ''}><option value="cash" ${st.mode === 'cash' ? 'selected' : ''}>Cash game</option><option value="tournament" ${st.mode === 'tournament' ? 'selected' : ''}>Tournament</option></select>
+      <label>เกม${S.hand && !S.hand.done ? ' (เปลี่ยนได้หลังจบมือ)' : ''}</label>
+      <input type="hidden" id="s_game" value="${st.game === 'plo' ? 'plo' : 'nlh'}">
+      <div class="seg" id="gameSeg">${[['nlh', "Texas Hold'em"], ['plo', 'Omaha (PLO)']].map(([v, l]) => `<button class="${(st.game === 'plo' ? 'plo' : 'nlh') === v ? 'on' : ''}" data-a="gameType" data-v="${v}">${l}</button>`).join('')}</div>
+      <p class="muted small" id="gameHint" ${st.game === 'plo' ? '' : 'hidden'}>Pot-Limit Omaha: แจกคนละ 4 ใบ ต้องใช้ไพ่ในมือ 2 ใบพอดี + ไพ่กลาง 3 ใบ · Raise ได้สูงสุดเท่ากับ Pot</p>
       <label>ไพ่</label>
       <input type="hidden" id="s_cards" value="${st.appCards ? 1 : 0}">
       <div class="seg" id="cardsSeg">${[[0, '🃏 ใช้ไพ่จริง'], [1, '📱 แอปแจกไพ่ให้']].map(([v, l]) => `<button class="${(st.appCards ? 1 : 0) === v ? 'on' : ''}" data-a="cardsMode" data-v="${v}">${l}</button>`).join('')}</div>
-      <p class="muted small" id="cardsHint" ${st.appCards ? '' : 'hidden'}>แอปสับไพ่แบบสุ่มเท่ากันทุกใบ แต่ละคนเห็นแค่ไพ่ 2 ใบของตัวเองในมือถือ ไพ่กลางเปิดให้เองทีละรอบ และตัดสินผู้ชนะให้อัตโนมัติ (เปลี่ยนได้หลังจบมือ)</p>
+      <p class="muted small" id="cardsHint" ${st.appCards ? '' : 'hidden'}>แอปสับไพ่แบบสุ่มเท่ากันทุกใบ แต่ละคนเห็นแค่ไพ่ของตัวเองในมือถือ ไพ่กลางเปิดให้เองทีละรอบ และตัดสินผู้ชนะให้อัตโนมัติ (เปลี่ยนได้หลังจบมือ)</p>
       <div id="buyInBox" ${st.mode === 'cash' ? '' : 'hidden'}>
         <label>Buy-in${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
         <input type="hidden" id="s_credit" value="${st.credit ? 1 : 0}">
@@ -1392,6 +1400,11 @@
         startHost(code, S, [], true);
         break;
       }
+      case 'gameType':
+        document.getElementById('s_game').value = d.v;
+        document.querySelectorAll('#gameSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
+        document.getElementById('gameHint').hidden = d.v !== 'plo';
+        break;
       case 'cardsMode':
         document.getElementById('s_cards').value = d.v;
         document.querySelectorAll('#cardsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
@@ -1443,7 +1456,7 @@
       ui.sheet = null; return render();
     }
     const mode = document.getElementById('s_mode').value;
-    const settings = { mode, startStack: num('s_stack') || 1000, appCards: document.getElementById('s_cards').value === '1' };
+    const settings = { mode, startStack: num('s_stack') || 1000, appCards: document.getElementById('s_cards').value === '1', game: document.getElementById('s_game').value };
     if (mode === 'cash') {
       Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: num('s_session'),
         credit: document.getElementById('s_credit').value === '1', chipBaht: Math.max(0, Number(document.getElementById('s_rate').value) || 0) });

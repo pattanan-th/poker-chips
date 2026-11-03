@@ -1,4 +1,5 @@
-// App-dealt cards for games without a physical deck. The host phone shuffles with the
+// App-dealt cards for games without a physical deck (Hold'em: 2 hole cards, Omaha: 4).
+// The host phone shuffles with the
 // browser's cryptographic RNG, keeps the deck outside the shared state, sends each player
 // only their own hole cards, reveals the board street by street and judges the showdown.
 (function (root) {
@@ -34,11 +35,15 @@
     return d;
   }
 
-  // Deal like at a table: one card each around twice, then burn-and-turn the board.
-  function deal(ids) {
+  const holeCount = (game) => (game === 'plo' ? 4 : 2);
+  // 4 hole cards each + 3 burns + 5 board must fit in 52 cards
+  const maxPlayers = (game) => Math.floor((52 - 8) / holeCount(game));
+
+  // Deal like at a table: one card each around (2 or 4 times), then burn-and-turn the board.
+  function deal(ids, game) {
     const deck = shuffle();
     const hole = {};
-    for (let r = 0; r < 2; r++) ids.forEach((id) => { (hole[id] = hole[id] || []).push(deck.pop()); });
+    for (let r = 0; r < holeCount(game); r++) ids.forEach((id) => { (hole[id] = hole[id] || []).push(deck.pop()); });
     const board = [];
     [3, 1, 1].forEach((n) => { deck.pop(); for (let k = 0; k < n; k++) board.push(deck.pop()); });
     return { hole, board, rest: deck };
@@ -93,26 +98,47 @@
     return { score: top, name: HAND_NAMES[top[0]] };
   }
 
+  // Omaha: exactly 2 hole cards + exactly 3 board cards
+  function bestOmaha(hole, board) {
+    if (board.length < 3) return null;
+    let top = null;
+    for (let a = 0; a < hole.length; a++) for (let b = a + 1; b < hole.length; b++) {
+      for (let i = 0; i < board.length; i++) for (let j = i + 1; j < board.length; j++) for (let k = j + 1; k < board.length; k++) {
+        const sc = score5([hole[a], hole[b], board[i], board[j], board[k]]);
+        if (!top || compare(sc, top) > 0) top = sc;
+      }
+    }
+    return { score: top, name: HAND_NAMES[top[0]] };
+  }
+
+  const bestFor = (hole, board, game) => (game === 'plo' ? bestOmaha(hole, board) : best(hole.concat(board)));
+
   // Bring the shared hand in line with the secret deal. Call on the host after every command.
   // secrets: { [handNo]: deal } kept by the host only. Returns true if it awarded the pot.
   function sync(s, secrets, E) {
     const h = s.hand;
     if (!h || !s.settings.appCards) return false;
     let d = secrets[h.no];
+    const n = holeCount(h.game);
     if (!d) {
       if (h.done) return false;
-      d = secrets[h.no] = deal(h.ids);
+      if (h.ids.length > maxPlayers(h.game)) throw new Error(`แอปแจกไพ่ได้สูงสุด ${maxPlayers(h.game)} คน`);
+      d = secrets[h.no] = deal(h.ids, h.game);
       Object.keys(secrets).forEach((k) => { if (Number(k) < h.no - 2) delete secrets[k]; });
     }
     // seats that joined the hand after an undo get cards from the same deck
-    h.ids.forEach((id) => { if (!d.hole[id]) d.hole[id] = [d.rest.pop(), d.rest.pop()]; });
+    h.ids.forEach((id) => {
+      if (d.hole[id]) return;
+      if (d.rest.length < n) throw new Error('ไพ่ในสำรับไม่พอ');
+      d.hole[id] = d.rest.splice(-n);
+    });
     h.appCards = true;
     if (!h.done) h.board = d.board.slice(0, BOARD_SHOWN[h.street] || 0);
     let awarded = false;
     if (h.street === 'showdown' && !h.done && h.pots) {
       const live = h.ids.filter((id) => !h.folded[id]);
       const res = {};
-      live.forEach((id) => { res[id] = best(d.hole[id].concat(d.board)); });
+      live.forEach((id) => { res[id] = bestFor(d.hole[id], d.board, h.game); });
       const winners = h.pots.map((pot) => {
         const top = pot.elig.reduce((m, id) => (compare(res[id].score, m) > 0 ? res[id].score : m), res[pot.elig[0]].score);
         return pot.elig.filter((id) => compare(res[id].score, top) === 0);
@@ -132,7 +158,7 @@
     return awarded;
   }
 
-  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deal, score5, best, compare, sync };
+  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deal, score5, best, bestOmaha, bestFor, holeCount, maxPlayers, compare, sync };
   if (typeof module !== 'undefined' && module.exports) module.exports = Cards;
   else root.Cards = Cards;
 })(this);

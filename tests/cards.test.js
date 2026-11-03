@@ -84,4 +84,33 @@ test('sync splits a tied pot', () => {
   assert.deepStrictEqual(s.players.map((p) => p.stack), [1000, 1000]);
 });
 
+test('omaha uses exactly two hole cards', () => {
+  // four hearts in hand + one on board is NOT a flush in Omaha
+  assert.notStrictEqual(C.bestOmaha(cs('Ah Kh Qh Jh'), cs('2h 7c 8d 9s 3c')).name, 'Flush');
+  // board quads: Omaha must still use two hole cards
+  assert.strictEqual(C.bestOmaha(cs('2c 3d 4h 5s'), cs('9h 9d 9s 9c Kd')).name, 'Three of a Kind');
+  assert.strictEqual(C.bestOmaha(cs('Ah Kh 2c 3d'), cs('Qh Jh Th 4s 5s')).name, 'Straight Flush');
+});
+
+test('PLO deal gives 4 cards each and judges with omaha rules', () => {
+  const s = E.newGame({ sb: 5, bb: 10, startStack: 1000, appCards: true, game: 'plo' });
+  ['p0', 'p1'].forEach((id) => E.addPlayer(s, id, id));
+  const secrets = {};
+  E.startHand(s, 0); C.sync(s, secrets, E);
+  assert.strictEqual(secrets[1].hole.p0.length, 4);
+  // p0 holds 4 hearts (one-heart board: no flush), p1 a pair of kings
+  secrets[1] = { hole: { p0: cs('Ah Qh Jh Th'), p1: cs('Kc Kd 2s 3s') }, board: cs('2h 7c 5d 8s 4c'), rest: [] };
+  E.act(s, s.hand.toAct, 'call'); C.sync(s, secrets, E);
+  for (let k = 0; k < 7; k++) { E.act(s, s.hand.toAct, 'check'); C.sync(s, secrets, E); }
+  assert.ok(s.hand.done);
+  assert.deepStrictEqual(s.hand.result, { p1: 20 });
+});
+
+test('too many players for a PLO deal is refused', () => {
+  const s = E.newGame({ appCards: true, game: 'plo' });
+  for (let i = 0; i < 12; i++) E.addPlayer(s, 'p' + i, 'p' + i);
+  E.startHand(s, 0);
+  assert.throws(() => C.sync(s, {}, E), /สูงสุด 11/);
+});
+
 console.log(`\n${passed} passed`);

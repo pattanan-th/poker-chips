@@ -268,4 +268,25 @@ test('no buy-in (credit): balances start at 0, go negative, never all-in', () =>
   assert.strictEqual(E.chipText(s, s.players[0].stack), '-120');
 });
 
+test('PLO: raises are capped at the pot', () => {
+  const s = E.newGame({ sb: 5, bb: 10, startStack: 1000, game: 'plo' });
+  ['a', 'b', 'c'].forEach((id) => E.addPlayer(s, id, id));
+  E.startHand(s, 0);
+  const u = s.hand.toAct;
+  assert.strictEqual(E.raiseCap(s, u), 35);                // 10 + (15 pot + 10 call)
+  assert.throws(() => E.act(s, u, 'raise', 36), /Pot limit/);
+  E.act(s, u, 'allin');                                     // "all-in" = pot raise
+  assert.strictEqual(s.hand.currentBet, 35);
+  assert.strictEqual(s.players.find((p) => p.id === u).stack, 965);
+  const n = s.hand.toAct;                                   // SB: pot 50, call 30 → 35 + 80
+  assert.strictEqual(E.raiseCap(s, n), 115);
+});
+
+test('PLO cap never exceeds the stack', () => {
+  const s = E.newGame({ sb: 5, bb: 10, startStack: 20, game: 'plo' });
+  ['a', 'b', 'c'].forEach((id) => E.addPlayer(s, id, id));
+  E.startHand(s, 0);
+  assert.strictEqual(E.raiseCap(s, s.hand.toAct), 20);
+});
+
 console.log(`\n${passed} passed`);

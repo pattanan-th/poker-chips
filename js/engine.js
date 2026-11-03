@@ -1,5 +1,5 @@
-// No-Limit Hold'em chip/betting engine. Cards are physical — this only tracks
-// chips, turns, streets and pots. Every function takes a game state and
+// Hold'em (No-Limit) / Omaha (Pot-Limit) chip/betting engine. Cards are physical — this only
+// tracks chips, turns, streets and pots. Every function takes a game state and
 // mutates it in place (callers clone first if they need history).
 (function (root) {
   'use strict';
@@ -21,6 +21,7 @@
         buyInValue: 0,          // money per buy-in, for the settlement table
         sessionMin: 0,          // cash: planned session length in minutes (0 = no clock)
         credit: false,          // cash without buy-in: play on credit, balances go +/- and settle at the end
+        game: 'nlh',            // 'nlh' = No-Limit Texas Hold'em | 'plo' = Pot-Limit Omaha
         levels: DEFAULT_LEVELS,
       }, settings || {}),
       players: [],
@@ -164,7 +165,7 @@
       bets: {}, contrib: {}, folded: {}, allIn: {}, acted: {}, noRaise: {},
       currentBet: b.bb, minRaise: b.bb, toAct: null, last: null,
       pots: null, done: false, result: null, runout: false, lastAct: {},
-      start: {}, actions: [], blinds: b,
+      start: {}, actions: [], blinds: b, game: s.settings.game === 'plo' ? 'plo' : 'nlh',
     };
     ids.forEach((id) => { h.start[id] = player(s, id).stack; });
     if (b.ante) ids.forEach((id) => {
@@ -204,6 +205,16 @@
     findNext(s, h, h.btn);
   }
 
+  // Highest total bet `id` may make this street: the whole stack, or in PLO the pot after calling.
+  function raiseCap(s, id) {
+    const h = s.hand;
+    const bet = h.bets[id] || 0;
+    const all = bet + player(s, id).stack;
+    if (h.game !== 'plo') return all;
+    const toCall = Math.max(0, h.currentBet - bet);
+    return Math.min(all, h.currentBet + potTotal(h) + toCall);
+  }
+
   function act(s, id, type, amount) {
     const h = s.hand;
     if (!h || h.done || h.street === 'showdown') fail('ไม่มีมือที่กำลังเล่น');
@@ -212,13 +223,14 @@
     const bet = h.bets[id] || 0;
     const toCall = h.currentBet - bet;
     const maxTo = bet + p.stack;
+    const cap = raiseCap(s, id);
     let label = type[0].toUpperCase() + type.slice(1);
     const street = h.street;
     let text = '';
 
     if (type === 'allin') {
-      amount = maxTo;
-      type = maxTo > h.currentBet && !h.noRaise[id] ? 'raise' : 'call';
+      amount = cap;
+      type = cap > h.currentBet && !h.noRaise[id] ? 'raise' : 'call';
     }
 
     if (type === 'fold') {
@@ -235,6 +247,7 @@
       amount = Math.floor(Number(amount));
       if (!(amount > h.currentBet)) fail('ยอด Raise ต้องมากกว่า bet ปัจจุบัน');
       if (amount > maxTo) fail('ชิปไม่พอ');
+      if (amount > cap) fail(`Pot limit: Raise ได้สูงสุด ${cap}`);
       if (h.noRaise[id]) fail('Raise ไม่ได้ (all-in ก่อนหน้าไม่ครบ min raise) — Call หรือ Fold');
       const size = amount - h.currentBet;
       const isAllIn = amount === maxTo;
@@ -425,7 +438,7 @@
   const Engine = {
     STREETS, DEFAULT_LEVELS, newGame, addPlayer, removePlayer, movePlayer, startHand, act, award,
     rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, sessionRemainingMs, blinds, potTotal, computePots,
-    eligible, inHand, streetName, invested, CREDIT, isCredit, chipText, resetStacks,
+    eligible, inHand, streetName, invested, CREDIT, isCredit, chipText, resetStacks, raiseCap,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
   else root.Engine = Engine;
