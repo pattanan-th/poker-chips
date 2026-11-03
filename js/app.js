@@ -349,7 +349,7 @@
     const resume = roomParam && store.get(hostKey(roomParam), null) ? roomParam : null;
     $app.innerHTML = `<div class="wrap">
       <svg class="chip-logo" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#c0392b"/><circle cx="50" cy="50" r="30" fill="none" stroke="#fff" stroke-width="8" stroke-dasharray="12 10"/><circle cx="50" cy="50" r="18" fill="#c0392b" stroke="#fff" stroke-width="2"/></svg>
-      <h1>Kapoke ship</h1>
+      <h1>Kapoke Chip</h1>
       <p class="center muted">ไพ่จริงบนโต๊ะ · ชิปบนมือถือ</p>
       <div class="card">
         <label>ชื่อของคุณ</label>
@@ -1443,7 +1443,7 @@
       case 'copy':
         (navigator.clipboard ? navigator.clipboard.writeText(joinUrl()) : Promise.reject()).then(() => toast('คัดลอกแล้ว', true), () => prompt('คัดลอกลิงก์นี้', joinUrl()));
         break;
-      case 'share': navigator.share({ title: 'Kapoke ship', text: `เข้าห้องโป๊กเกอร์ ${code}`, url: joinUrl() }).catch(() => {}); break;
+      case 'share': navigator.share({ title: 'Kapoke Chip', text: `เข้าห้องโป๊กเกอร์ ${code}`, url: joinUrl() }).catch(() => {}); break;
       default: break;
     }
   });
