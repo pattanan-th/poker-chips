@@ -590,9 +590,10 @@
         <div><label>BB</label><input id="s_bb" type="number" inputmode="numeric" value="${st.bb}"></div>
         <div><label>Ante</label><input id="s_ante" type="number" inputmode="numeric" value="${st.ante || 0}"></div></div>
         <label>มูลค่าเงินต่อ 1 buy-in (บาท, ใส่ 0 ถ้าไม่ใช้)</label><input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}">
-        <label>⏰ เวลาเล่น (นาที, ใส่ 0 = ไม่จับเวลา)</label><input id="s_session" type="number" inputmode="numeric" value="${st.sessionMin || 0}">
-        <div class="quickmin">${[60, 90, 120, 180].map((m) => `<button class="sm" data-a="sessionPreset" data-v="${m}">${m / 60} ชม.</button>`).join('')}</div>
-        <p class="muted small">เริ่มนับตอนมือแรก (ถ้าแก้ระหว่างเกมจะนับใหม่ทันที) · หมดเวลาแล้วจะแจ้งทุกเครื่อง</p>
+        <label>⏰ เวลาเล่น</label>
+        <div class="seg" id="sessionSeg">${[0, 60, 90, 120, 180].map((m) => `<button class="${(st.sessionMin || 0) === m ? 'on' : ''}" data-a="sessionPreset" data-v="${m}">${m ? m / 60 + ' ชม.' : 'ไม่จำกัด'}</button>`).join('')}</div>
+        <div class="row sessioncustom"><span>หรือกำหนดเอง</span><input id="s_session" type="number" inputmode="numeric" min="0" value="${st.sessionMin || 0}"><span>นาที</span></div>
+        <p class="muted small">ค่าเริ่มต้นคือไม่จำกัดเวลา · ถ้าตั้งเวลา จะเริ่มนับตอนมือแรก (ถ้าแก้ระหว่างเกมจะนับใหม่ทันที) และพอหมดเวลาจะแจ้งทุกเครื่อง</p>
         <p class="muted small">เปลี่ยน blind มีผลตั้งแต่มือถัดไป</p>
       </div>
       <div id="tourBox" ${st.mode === 'tournament' ? '' : 'hidden'}>
@@ -763,6 +764,7 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'raiseRange') { ui.raiseTo = Number(e.target.value); syncRaise(); }
     if (e.target.id === 'raiseInput') { ui.raiseTo = Math.floor(Number(e.target.value) || 0); syncRaise(true); }
+    if (e.target.id === 's_session') markSessionSeg();
     const k = e.target.dataset && e.target.dataset.k;
     if (k === 'sb') e.target.dataset.manual = '1';
     if (k === 'bb') {
@@ -776,6 +778,12 @@
       document.getElementById('tourBox').hidden = e.target.value !== 'tournament';
     }
   });
+
+  // highlight the preset matching the minutes box (none for a custom value)
+  function markSessionSeg() {
+    const v = Math.max(0, Math.floor(Number(document.getElementById('s_session').value) || 0));
+    document.querySelectorAll('#sessionSeg button').forEach((b) => b.classList.toggle('on', Number(b.dataset.v) === v));
+  }
 
   // typing: leave the input alone so the cursor doesn't jump while the user types
   document.addEventListener('keydown', (e) => {
@@ -914,7 +922,7 @@
         startHost(code, S, [], true);
         break;
       }
-      case 'sessionPreset': document.getElementById('s_session').value = d.v; break;
+      case 'sessionPreset': document.getElementById('s_session').value = d.v; markSessionSeg(); break;
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;
       case 'saveSettings': saveSettings(); break;
       case 'lvAdd': {

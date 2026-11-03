@@ -175,3 +175,7 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .quickmin { display: flex; gap: 6px; margin-top: 6px; }
 .quickmin button { flex: 1; }
 .timer.over { color: var(--red); }
+#sessionSeg button { padding: 9px 2px; font-size: 14px; }
+.sessioncustom { margin-top: 8px; font-size: 14px; color: var(--muted); }
+.sessioncustom > span { flex: none; }
+.sessioncustom input { width: 90px; flex: none; text-align: center; padding: 7px; }
