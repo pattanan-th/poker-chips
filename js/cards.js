@@ -187,7 +187,21 @@
     return awarded;
   }
 
-  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deal, score5, best, bestOmaha, bestFor, holeCount, maxPlayers, compare, equity, sync };
+  // After the hand, a player may turn their cards face up (e.g. after a fold or an uncalled bet).
+  function show(s, secrets, id) {
+    const h = s.hand; const d = h && secrets[h.no];
+    if (!h || !h.done || !h.appCards || !d || !d.hole[id]) throw new Error('โชว์ไพ่ได้หลังจบมือ (เฉพาะโหมดแอปแจกไพ่)');
+    h.shown = h.shown || {};
+    if (h.shown[id]) return;
+    const board = h.board || [];
+    const made = board.length >= 3 ? bestFor(d.hole[id], board, h.game) : null;
+    h.shown[id] = { cards: d.hole[id], hand: made ? made.name : '' };
+    const last = s.history && s.history[s.history.length - 1];
+    if (last && last.no === h.no) last.shown = h.shown;
+    s.log.push(`${(s.players.find((p) => p.id === id) || {}).name} โชว์ไพ่${made ? ` (${made.name})` : ''}`);
+  }
+
+  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deal, score5, best, bestOmaha, bestFor, holeCount, maxPlayers, compare, equity, sync, show };
   if (typeof module !== 'undefined' && module.exports) module.exports = Cards;
   else root.Cards = Cards;
 })(this);
