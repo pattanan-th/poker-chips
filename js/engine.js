@@ -367,11 +367,14 @@
     addLog(s, `${p.name} Rebuy +${s.settings.startStack}`);
   }
 
-  function setStack(s, id, stack) {
+  // asBuyIn: the change is chips bought/cashed out (counts toward the player's investment
+  // in the settlement); otherwise it's a correction of a miscount.
+  function setStack(s, id, stack, asBuyIn) {
     if (inHand(s, id)) fail('แก้ชิปได้หลังจบมือ');
     const p = player(s, id);
     stack = Math.max(0, Math.floor(Number(stack) || 0));
-    addLog(s, `${p.name} ชิป ${p.stack} → ${stack} (แก้โดยเจ้ามือ)`);
+    if (asBuyIn) p.extraBuyIn = (p.extraBuyIn || 0) + stack - p.stack;
+    addLog(s, `${p.name} ชิป ${p.stack} → ${stack} (${asBuyIn ? 'ซื้อ/คืนชิป' : 'แก้โดยเจ้ามือ'})`);
     p.stack = stack;
     if (stack > 0) { p.out = false; s.finishOrder = s.finishOrder.filter((x) => x !== id); }
   }

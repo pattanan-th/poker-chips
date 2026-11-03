@@ -181,7 +181,7 @@
       case 'start': return E.startHand(S, t);
       case 'award': return E.award(S, cmd.winners);
       case 'rebuy': return E.rebuy(S, cmd.pid);
-      case 'stack': return E.setStack(S, cmd.pid, cmd.v);
+      case 'stack': return E.setStack(S, cmd.pid, cmd.v, cmd.asBuyIn);
       case 'sitout': return E.setSitOut(S, cmd.pid, cmd.v);
       case 'stand': return E.setLeft(S, cmd.pid, cmd.v);
       case 'remove':
@@ -741,7 +741,7 @@
     }
     const money = st.buyInValue > 0;
     const data = S.players.map((p) => {
-      const net = p.stack - p.buyIns * st.startStack;
+      const net = p.stack - p.buyIns * st.startStack - (p.extraBuyIn || 0);
       return { p, net, cash: net / st.startStack * st.buyInValue };
     }).sort((a, b) => b.net - a.net);
     const rows = data.map(({ p, net, cash }) => `<tr><td>${esc(p.name)}${p.left ? ' <span class="muted small">(ลุก)</span>' : ''}</td><td>${p.buyIns}</td><td>${fmt(p.stack)}</td>
@@ -752,7 +752,7 @@
     const tx = settle(owed);
     const off = owed.reduce((a, o) => a + o.amt, 0);
     const txHtml = tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${fmt(t.amt)} ${unit}</b></div>`).join('')
-      : '<p class="muted small">ยังไม่มีใครได้หรือเสีย</p>';
+      : `<p class="muted small">${owed.some((o) => o.amt) ? 'คำนวณการโอนไม่ได้ เพราะยอดรวมไม่ลงตัว (ดูหมายเหตุด้านล่าง)' : 'ยังไม่มีใครได้หรือเสีย'}</p>`;
     return ['สรุปชิป', `<table><tr><th>ผู้เล่น</th><th>Buy-in</th><th>ชิป</th><th>กำไร</th>${money ? '<th>บาท</th>' : ''}</tr>${rows}</table>
       <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${txHtml}
       ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${fmt(off)} ${unit} (ชิปบนโต๊ะไม่ตรงกับยอด buy-in เช่น มีการแก้ชิป${money ? ' หรือปัดเศษ' : ''})</p>` : ''}
@@ -971,7 +971,10 @@
       case 'setStack': {
         const p = pById(d.pid);
         const v = prompt(`ชิปของ ${p.name}`, p.stack);
-        if (v != null && v !== '') send({ c: 'stack', pid: d.pid, v: Number(v) });
+        if (v == null || v === '' || Number(v) === p.stack) break;
+        // in cash games the settlement needs to know whether money changed hands
+        const asBuyIn = S.settings.mode === 'cash' && confirm(`นับเป็นการซื้อชิปเพิ่ม / คืนชิป (มีผลกับยอดเงินตอนสรุป) ใช่ไหม?\n\nตกลง = ซื้อ/คืนชิป\nยกเลิก = แค่แก้ยอดที่นับผิด`);
+        send({ c: 'stack', pid: d.pid, v: Number(v), asBuyIn });
         break;
       }
       case 'remove': {

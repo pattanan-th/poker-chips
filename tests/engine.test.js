@@ -234,4 +234,12 @@ test('cash session clock starts with the first hand and pauses', () => {
   assert.strictEqual(E.sessionRemainingMs(s, 1000 + 40 * 60000), 40 * 60000);
 });
 
+test('setStack as buy-in tracks extra investment; as correction does not', () => {
+  const s = game([1000, 1000]);
+  E.setStack(s, 'p0', 300, true);
+  E.setStack(s, 'p1', 1200, false);
+  assert.strictEqual(s.players[0].extraBuyIn, -700);
+  assert.strictEqual(s.players[1].extraBuyIn, undefined);
+});
+
 console.log(`\n${passed} passed`);
