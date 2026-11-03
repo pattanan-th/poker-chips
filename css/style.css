@@ -179,3 +179,11 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .sessioncustom { margin-top: 8px; font-size: 14px; color: var(--muted); }
 .sessioncustom > span { flex: none; }
 .sessioncustom input { width: 90px; flex: none; text-align: center; padding: 7px; }
+
+/* recent rooms */
+.room { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.room:last-of-type { border-bottom: 0; }
+.room .rinfo { flex: 1; min-width: 0; }
+.room .rinfo b { letter-spacing: 2px; font-size: 17px; }
+.room .rstat { font-size: 13px; color: var(--muted); margin-left: 6px; }
+.room button { flex: none; }

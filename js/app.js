@@ -44,15 +44,41 @@
   }
 
   // ---------- host ----------
-  const HOST_KEY = 'pk:host';
+  // Each hosted room keeps its own save so several games can be resumed; pk:rooms lists
+  // recently opened rooms (hosted or joined) for the home screen.
+  const hostKey = (c) => 'pk:host:' + c;
+  const ROOMS_KEY = 'pk:rooms';
 
-  function saveHost() { store.set(HOST_KEY, { code, S, hist: hist.slice(-30) }); }
+  (function migrateSingleSave() {
+    const old = store.get('pk:host', null);
+    if (old && old.code) { store.set(hostKey(old.code), old); rememberRoom(old.code, 'host', old.S); }
+    store.del('pk:host');
+  })();
+
+  function rememberRoom(c, r, game) {
+    const rooms = store.get(ROOMS_KEY, []).filter((x) => x.code !== c);
+    const info = game ? { mode: game.settings.mode, players: game.players.length, handNo: game.handNo } : {};
+    rooms.unshift(Object.assign({ code: c, role: r, at: Date.now() }, info));
+    store.set(ROOMS_KEY, rooms.slice(0, 8));
+  }
+
+  function forgetRoom(c) {
+    store.set(ROOMS_KEY, store.get(ROOMS_KEY, []).filter((x) => x.code !== c));
+    store.del(hostKey(c));
+  }
+
+  let lastRemember = 0;
+  function saveHost() {
+    store.set(hostKey(code), { code, S, hist: hist.slice(-30) });
+    if (Date.now() - lastRemember > 30000) { lastRemember = Date.now(); rememberRoom(code, 'host', S); }
+  }
 
   // probe: if the room id is already taken, check whether another host is live there
   // (someone took over while we were gone) and step down to player instead of fighting for it.
   function startHost(c, game, h, probe) {
     role = 'host'; code = c; S = game; hist = h || []; online = new Set(); hostLostAt = null;
     S.hostId = myId;
+    lastRemember = Date.now(); rememberRoom(code, 'host', S);
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
     net = Net.host(code, {
       probe,
@@ -100,7 +126,8 @@
   }
 
   function becomeClient(msg) {
-    store.del(HOST_KEY);
+    store.del(hostKey(code));
+    rememberRoom(code, 'client', S);
     if (net) net.destroy();
     hist = []; online = new Set(); ui.sheet = null; ui.proxy = false; handingOff = false;
     toast(msg, true);
@@ -193,6 +220,7 @@
     store.set('pk:name', myName);
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
     hostLostAt = null;
+    rememberRoom(code, 'client', S);
     net = Net.client(code, myId, myName, hello, {
       onStatus(st) {
         netStatus = st;
@@ -274,9 +302,8 @@
   }
 
   function renderHome() {
-    const saved = store.get(HOST_KEY, null);
     const roomParam = (params.get('room') || '').toUpperCase();
-    const resume = saved && saved.code && (!roomParam || roomParam === saved.code);
+    const resume = roomParam && store.get(hostKey(roomParam), null) ? roomParam : null;
     $app.innerHTML = `<div class="wrap">
       <svg class="chip-logo" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#c0392b"/><circle cx="50" cy="50" r="30" fill="none" stroke="#fff" stroke-width="8" stroke-dasharray="12 10"/><circle cx="50" cy="50" r="18" fill="#c0392b" stroke="#fff" stroke-width="2"/></svg>
       <h1>Poker Chips</h1>
@@ -285,7 +312,8 @@
         <label>ชื่อของคุณ</label>
         <input id="name" maxlength="16" value="${esc(myName)}" placeholder="เช่น โจโจ้" autocomplete="nickname">
       </div>
-      ${resume ? `<button class="primary" style="width:100%" data-a="resume">กลับเข้าห้องเดิม ${esc(saved.code)} (เจ้ามือ)</button>` : ''}
+      ${resume ? `<button class="primary" style="width:100%" data-a="resume" data-code="${esc(resume)}">กลับเข้าห้องเดิม ${esc(resume)} (เจ้ามือ)</button>` : ''}
+      ${recentRooms()}
       <div class="card">
         <h2>เข้าห้องของเพื่อน</h2>
         <div class="row"><input id="code" maxlength="5" placeholder="รหัสห้อง" value="${esc(roomParam)}" style="text-transform:uppercase;letter-spacing:3px;font-weight:700">
@@ -299,6 +327,42 @@
         <button class="${resume || roomParam ? '' : 'primary'}" style="width:100%;margin-top:8px" data-a="create">สร้างห้อง</button>
       </div>
     </div>`;
+  }
+
+  function recentRooms() {
+    const rooms = store.get(ROOMS_KEY, []);
+    if (!rooms.length) return '';
+    const ago = (t) => {
+      const m = Math.floor((Date.now() - t) / 60000);
+      return m < 1 ? 'เมื่อกี้' : m < 60 ? `${m} นาทีก่อน` : m < 1440 ? `${Math.floor(m / 60)} ชม.ก่อน` : `${Math.floor(m / 1440)} วันก่อน`;
+    };
+    const rows = rooms.map((r) => {
+      const mine = r.role === 'host' && store.get(hostKey(r.code), null);
+      const meta = [mine ? '👑 เจ้ามือ' : 'ผู้เล่น', r.mode === 'tournament' ? 'Tournament' : r.mode === 'cash' ? 'Cash' : '',
+        r.players ? `${r.players} คน` : '', r.handNo ? `มือที่ ${r.handNo}` : '', ago(r.at)].filter(Boolean).join(' · ');
+      return `<div class="room" data-code="${esc(r.code)}">
+        <div class="rinfo"><b>${esc(r.code)}</b> <span class="rstat" data-st="${esc(r.code)}">${mine ? '' : '<span class="dot"></span> กำลังเช็ก…'}</span><div class="muted small">${meta}</div></div>
+        <button class="${mine ? 'primary' : 'blue'} sm" data-a="${mine ? 'resume' : 'joinRoom'}" data-code="${esc(r.code)}">${mine ? 'เปิดต่อ' : 'เข้า'}</button>
+        <button class="sm ghost" data-a="forgetRoom" data-code="${esc(r.code)}" aria-label="ลบออกจากรายการ">✕</button>
+      </div>`;
+    }).join('');
+    setTimeout(checkRooms, 0);
+    return `<div class="card"><h2>ห้องล่าสุด</h2>${rows}
+      <p class="muted small" style="margin:8px 0 0">ห้องที่คุณเป็นเจ้ามือ กด "เปิดต่อ" แล้วเล่นต่อจากเดิมได้เลย (ระหว่างที่ปิดแอป คนอื่นจะเข้าห้องไม่ได้)</p></div>`;
+  }
+
+  // Ask the signalling server whether each joined room's host is up right now.
+  let roomsChecked = false;
+  function checkRooms() {
+    if (roomsChecked) return;
+    roomsChecked = true;
+    document.querySelectorAll('.rstat[data-st]').forEach((el) => {
+      if (!el.innerHTML) return;
+      Net.probe(el.dataset.st).then((alive) => {
+        const cur = document.querySelector(`.rstat[data-st="${el.dataset.st}"]`);
+        if (cur) cur.innerHTML = alive ? '<span class="dot on"></span> เปิดอยู่' : '<span class="dot off"></span> ไม่พบเจ้ามือ';
+      });
+    });
   }
 
   function renderKicked() {
@@ -553,6 +617,7 @@
       <button data-a="sheet" data-v="summary">📊 สรุปผล / เงิน</button>
       <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
+      <button data-a="goHome">🏠 กลับหน้าแรก (เก็บห้องไว้)</button>
       <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
     </div>`];
   }
@@ -824,10 +889,25 @@
       }
       case 'resume': {
         if (!readName(true)) return;
-        const saved = store.get(HOST_KEY, null);
+        const saved = store.get(hostKey(d.code), null);
+        if (!saved) return toast('ไม่พบข้อมูลห้องนี้ในเครื่อง');
         startHost(saved.code, saved.S, saved.hist || [], true);
         break;
       }
+      case 'joinRoom':
+        if (!readName()) return;
+        startClient(d.code);
+        break;
+      case 'forgetRoom': {
+        const mine = store.get(hostKey(d.code), null);
+        if (!confirm(mine ? `ลบห้อง ${d.code}? เกมที่บันทึกไว้ในเครื่องนี้จะหายไป` : `ลบห้อง ${d.code} ออกจากรายการ?`)) return;
+        forgetRoom(d.code); roomsChecked = false; renderHome();
+        break;
+      }
+      case 'goHome':
+        if (!confirm('กลับหน้าแรก? ห้องยังบันทึกไว้ แต่ระหว่างนี้คนอื่นจะเล่นต่อไม่ได้จนกว่าคุณจะกด "เปิดต่อ" (หรือมีคนรับเป็นเจ้ามือแทน)')) return;
+        saveHost(); net && net.destroy(); location.href = location.pathname + (params.get('pid') ? '?pid=' + params.get('pid') : '');
+        break;
       case 'join': {
         if (!readName()) return;
         const c = (document.getElementById('code').value || '').trim().toUpperCase();
@@ -838,11 +918,11 @@
       case 'rejoin': kicked = false; S = null; net.destroy(); startClient(code, { rejoin: true }); break;
       case 'leave':
         if (!confirm('ออกจากห้อง?')) return;
-        net && net.destroy(); location.href = location.pathname;
+        net && net.destroy(); location.href = location.pathname + (params.get('pid') ? '?pid=' + params.get('pid') : '');
         break;
       case 'endRoom':
         if (!confirm('ปิดห้องและลบเกมนี้? (กู้คืนไม่ได้)')) return;
-        store.del(HOST_KEY); net && net.destroy(); location.href = location.pathname;
+        forgetRoom(code); net && net.destroy(); location.href = location.pathname + (params.get('pid') ? '?pid=' + params.get('pid') : '');
         break;
       case 'sheet': ui.sheet = d.v; render(); break;
       case 'closeSheet': ui.sheet = null; render(); break;
