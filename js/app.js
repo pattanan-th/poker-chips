@@ -79,7 +79,7 @@
 
   setInterval(() => { if (isHost() && net) net.broadcast(() => ({ t: 'ping', now: Date.now() })); }, 4000);
 
-  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'rename'];
+  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename'];
 
   function apply(cmd, from) {
     const fromHost = from === myId;
@@ -114,6 +114,7 @@
       case 'rebuy': return E.rebuy(S, cmd.pid);
       case 'stack': return E.setStack(S, cmd.pid, cmd.v);
       case 'sitout': return E.setSitOut(S, cmd.pid, cmd.v);
+      case 'stand': return E.setLeft(S, cmd.pid, cmd.v);
       case 'remove':
         E.removePlayer(S, cmd.pid);
         S.removed = (S.removed || []).concat(cmd.pid);
@@ -245,14 +246,14 @@
   }
 
   function renderConnecting() {
-    const msg = { 'no-host': 'ยังไม่พบห้องนี้ — เช็กรหัส หรือรอเจ้ามือเปิดแอป', reconnecting: 'กำลังเชื่อมต่อใหม่…' }[netStatus] || 'กำลังเชื่อมต่อห้อง…';
+    const msg = { 'no-host': 'ยังไม่พบห้องนี้ — เช็กรหัส หรือรอเจ้ามือเปิดแอป', reconnecting: 'กำลังเชื่อมต่อใหม่…', unsupported: 'เบราว์เซอร์นี้ใช้ไม่ได้ — ลองเปิดด้วย Chrome หรือ Safari' }[netStatus] || 'กำลังเชื่อมต่อห้อง…';
     $app.innerHTML = `<div class="wrap"><div class="card center"><div class="bigcode">${esc(code)}</div><p>${msg}</p>
       <button class="ghost" data-a="leave">ยกเลิก</button></div></div>`;
   }
 
   function statusDot() {
     const ok = netStatus === 'online';
-    const title = { online: 'เชื่อมต่อแล้ว', claiming: 'กำลังเปิดห้อง…', reconnecting: 'กำลังเชื่อมต่อใหม่…', connecting: 'กำลังเชื่อมต่อ…', 'no-host': 'ไม่พบเจ้ามือ' }[netStatus] || netStatus;
+    const title = { online: 'เชื่อมต่อแล้ว', claiming: 'กำลังเปิดห้อง…', reconnecting: 'กำลังเชื่อมต่อใหม่…', connecting: 'กำลังเชื่อมต่อ…', 'no-host': 'ไม่พบเจ้ามือ', unsupported: 'เบราว์เซอร์ไม่รองรับ' }[netStatus] || netStatus;
     return `<span class="dot ${ok ? 'on' : 'off'}" title="${title}"></span>${ok ? '' : `<span class="small muted">${title}</span>`}`;
   }
 
@@ -306,8 +307,13 @@
         <span class="street">${E.streetName(h.street)}</span><div class="hint">${hint}</div>`;
     }
     const lastLog = S.log.slice(-2).map(esc).join('<br>');
-    return `<div class="card pot">${potHtml}</div>
-      <div class="players">${S.players.map(playerRow).join('')}</div>
+    const me = pById(myId);
+    const away = S.players.filter((p) => p.left);
+    const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ชิป ${fmt(me.stack)}</span>
+      <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
+    return `${standBanner}<div class="card pot">${potHtml}</div>
+      <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
+      ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${fmt(p.stack)}</b>`).join(' · ')}</div>` : ''}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
       <div class="lastlog" data-a="sheet" data-v="log">${lastLog}<br><u>ดูประวัติทั้งหมด</u></div>`;
   }
@@ -421,7 +427,7 @@
         <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
         <button data-a="sheet" data-v="summary">📊 สรุปชิป</button>
         <button data-a="sheet" data-v="log">📜 ประวัติ</button>
-        ${me ? `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>
+        ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
         <button data-a="rename">✏️ เปลี่ยนชื่อ</button>` : ''}
         <button class="ghost" data-a="leave">ออกจากห้อง</button></div>`];
     }
@@ -434,9 +440,15 @@
       <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
       <button data-a="sheet" data-v="summary">📊 สรุปผล / เงิน</button>
       <button data-a="sheet" data-v="log">📜 ประวัติ</button>
-      ${me ? '' : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
+      ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
       <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
     </div>`];
+  }
+
+  function standButton(me) {
+    return me.left
+      ? `<button class="primary" data-a="cmd" data-c="stand" data-pid="${esc(me.id)}" data-v="">🪑 นั่งกลับ (ชิป ${fmt(me.stack)})</button>`
+      : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากโต๊ะ (เก็บชิป ${fmt(me.stack)})</button>`;
   }
 
   function inviteSheet() {
@@ -497,13 +509,15 @@
   function playersSheet() {
     const rows = S.players.map((p, i) => {
       const busy = E.inHand(S, p.id);
-      return `<div class="prow"><div class="top"><b>${i + 1}. ${esc(p.name)}${p.id === myId ? ' (คุณ)' : ''}</b><span>${fmt(p.stack)} <span class="muted small">· buy-in ${p.buyIns}</span></span></div>
+      return `<div class="prow"><div class="top"><b>${i + 1}. ${esc(p.name)}${p.id === myId ? ' (คุณ)' : ''}${p.left ? ' <span class="muted small">· ลุกแล้ว</span>' : ''}</b><span>${fmt(p.stack)} <span class="muted small">· buy-in ${p.buyIns}</span></span></div>
       <div class="acts">
         <button class="sm" data-a="cmd" data-c="move" data-pid="${esc(p.id)}" data-d="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
         <button class="sm" data-a="cmd" data-c="move" data-pid="${esc(p.id)}" data-d="1" ${i === S.players.length - 1 ? 'disabled' : ''}>↓</button>
         <button class="sm" data-a="cmd" data-c="rebuy" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>Rebuy</button>
         <button class="sm" data-a="setStack" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>แก้ชิป</button>
-        <button class="sm" data-a="cmd" data-c="sitout" data-pid="${esc(p.id)}" data-v="${p.sitOut ? '' : '1'}">${p.sitOut ? 'กลับมาเล่น' : 'พัก'}</button>
+        <button class="sm" data-a="cmd" data-c="sitout" data-pid="${esc(p.id)}" data-v="${p.sitOut ? '' : '1'}" ${p.left ? 'disabled' : ''}>${p.sitOut ? 'กลับมาเล่น' : 'พัก'}</button>
+        ${p.left ? `<button class="sm primary" data-a="cmd" data-c="stand" data-pid="${esc(p.id)}" data-v="">นั่งกลับ</button>`
+          : `<button class="sm" data-a="stand" data-pid="${esc(p.id)}">ลุก</button>`}
         <button class="sm danger" data-a="remove" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>ลบ</button>
       </div></div>`;
     }).join('');
@@ -523,7 +537,7 @@
       const net = p.stack - p.buyIns * st.startStack;
       return { p, net, cash: net / st.startStack * st.buyInValue };
     }).sort((a, b) => b.net - a.net);
-    const rows = data.map(({ p, net, cash }) => `<tr><td>${esc(p.name)}</td><td>${p.buyIns}</td><td>${fmt(p.stack)}</td>
+    const rows = data.map(({ p, net, cash }) => `<tr><td>${esc(p.name)}${p.left ? ' <span class="muted small">(ลุก)</span>' : ''}</td><td>${p.buyIns}</td><td>${fmt(p.stack)}</td>
       <td class="${net > 0 ? 'pos' : net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</td>
       ${money ? `<td class="${cash > 0 ? 'pos' : cash < 0 ? 'neg' : ''}">${cash > 0 ? '+' : ''}${fmt(Math.round(cash))}</td>` : ''}</tr>`).join('');
     return ['สรุปชิป', `<table><tr><th>ผู้เล่น</th><th>Buy-in</th><th>ชิป</th><th>กำไร</th>${money ? '<th>บาท</th>' : ''}</tr>${rows}</table>
@@ -676,6 +690,12 @@
       case 'rename': {
         const v = prompt('ชื่อใหม่', myName);
         if (v && v.trim()) { myName = v.trim().slice(0, 16); store.set('pk:name', myName); send({ c: 'rename', pid: myId, name: myName }); }
+        break;
+      }
+      case 'stand': {
+        const p = pById(d.pid);
+        const who = p.id === myId ? 'คุณ' : p.name;
+        if (confirm(`${who}จะลุกจากโต๊ะพร้อมชิป ${fmt(p.stack)}?\nไม่ถูกแจกไพ่จนกว่าจะกด "นั่งกลับ"`)) { ui.sheet = null; send({ c: 'stand', pid: d.pid, v: true }); }
         break;
       }
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;

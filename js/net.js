@@ -63,20 +63,25 @@
 
   // Client: connects to the host and keeps reconnecting.
   function client(code, myId, name, hello, { onMessage, onStatus }) {
-    let peer = null, conn = null, dead = false, timer = null, lastMsg = 0;
+    let peer = null, conn = null, dead = false, timer = null, lastMsg = 0, fails = 0;
+    const backoff = () => Math.min(1500 * 2 ** fails++, 15000);
 
     function scheduleConnect(ms) { clearTimeout(timer); if (!dead) timer = setTimeout(connect, ms); }
 
     function connect() {
       if (dead) return;
       if (!peer || peer.destroyed) {
-        peer = new Peer({ debug: 1 });
-        peer.on('open', () => connect());
-        peer.on('disconnected', () => { if (!dead && !peer.destroyed) peer.reconnect(); });
-        peer.on('error', (err) => {
+        const p = peer = new Peer({ debug: 1 });
+        p.on('open', () => { fails = 0; connect(); });
+        // back off instead of hammering the signalling server when the network is down
+        p.on('disconnected', () => { if (!dead && !p.destroyed) setTimeout(() => { if (!dead && !p.destroyed && p.disconnected) p.reconnect(); }, backoff()); });
+        p.on('error', (err) => {
+          if (err.type === 'browser-incompatible') { onStatus('unsupported'); dead = true; p.destroy(); return; }
           if (err.type === 'peer-unavailable') onStatus('no-host');
           else onStatus('reconnecting');
-          scheduleConnect(2500);
+          // a broken signalling socket leaves the peer unusable: start over with a fresh one
+          if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) p.destroy();
+          scheduleConnect(backoff());
         });
         return;
       }

@@ -104,7 +104,7 @@
   const nextOf = (ids, id) => ids[(ids.indexOf(id) + 1) % ids.length];
 
   function eligible(s) {
-    return s.players.filter((p) => !p.sitOut && !p.out && p.stack > 0);
+    return s.players.filter((p) => !p.sitOut && !p.left && !p.out && p.stack > 0);
   }
 
   function nextButton(s, ids) {
@@ -357,13 +357,23 @@
     addLog(s, `${p.name} ${v ? 'พักโต๊ะ' : 'กลับมาเล่น'}`);
   }
 
+  // Stand up: leave the table keeping the chips (cash out); can sit back later.
+  function setLeft(s, id, v) {
+    const p = player(s, id);
+    const h = s.hand;
+    if (v && h && !h.done && h.ids.includes(id) && !h.folded[id]) fail('ลุกได้หลังจบมือ หรือหลัง Fold');
+    p.left = !!v;
+    if (!v) p.sitOut = false;
+    addLog(s, v ? `${p.name} ลุกจากโต๊ะ (ชิป ${p.stack})` : `${p.name} กลับมานั่ง`);
+  }
+
   function streetName(st) {
     return { preflop: 'Pre-flop', flop: 'Flop', turn: 'Turn', river: 'River', showdown: 'Showdown' }[st] || st;
   }
 
   const Engine = {
     STREETS, DEFAULT_LEVELS, newGame, addPlayer, removePlayer, movePlayer, startHand, act, award,
-    rebuy, setStack, setSitOut, tick, setPaused, levelRemainingMs, blinds, potTotal, computePots,
+    rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, blinds, potTotal, computePots,
     eligible, inHand, streetName,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;

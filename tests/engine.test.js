@@ -182,4 +182,22 @@ test('tournament: blinds rise with clock, busted players go out', () => {
   assert.deepStrictEqual(s.hand.ids, ['p0', 'p1']);
 });
 
+test('stand up: blocked mid-hand unless folded, skipped by next hand, sit back in', () => {
+  const s = game([1000, 1000, 1000]);
+  E.startHand(s, 0);
+  assert.throws(() => E.setLeft(s, 'p1', true), /ลุกได้หลังจบมือ/);
+  E.act(s, 'p0', 'fold');
+  E.setLeft(s, 'p0', true);
+  E.act(s, 'p1', 'call'); E.act(s, 'p2', 'check');
+  for (const st of ['flop', 'turn', 'river']) { E.act(s, 'p1', 'check'); E.act(s, 'p2', 'check'); }
+  E.award(s, [['p1']]);
+  E.startHand(s, 0);
+  assert.deepStrictEqual(s.hand.ids, ['p1', 'p2']);
+  assert.strictEqual(s.players[0].stack, 1000);
+  E.act(s, s.hand.toAct, 'fold');
+  E.setLeft(s, 'p0', false);
+  E.startHand(s, 0);
+  assert.deepStrictEqual(s.hand.ids, ['p0', 'p1', 'p2']);
+});
+
 console.log(`\n${passed} passed`);

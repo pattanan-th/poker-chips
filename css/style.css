@@ -144,3 +144,6 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .lvdel:hover { color: var(--red); }
 .lvall { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; color: var(--muted); }
 .lvall input { width: 64px; flex: none; padding: 7px; text-align: center; }
+.away { font-size: 13px; color: var(--muted); margin-top: 8px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 12px; }
+.away b { color: var(--text); font-weight: 600; }
+.banner.row > span { flex: 1; }
