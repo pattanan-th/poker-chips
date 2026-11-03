@@ -14,15 +14,17 @@
   }
 
   // Host: onMessage(clientId, msg), onPeers(ids) when the connected set changes.
-  function host(code, { onOpen, onMessage, onPeers, onStatus }) {
+  // probe: when the room id is taken, check whether a live host answers there and
+  // call onLostId() instead of retrying forever (someone else took over the room).
+  function host(code, { onOpen, onMessage, onPeers, onStatus, onLostId, probe: useProbe }) {
     const conns = new Map(); // clientId -> conn
-    let peer, retry = 0, dead = false;
+    let peer, retry = 0, dead = false, wasOpen = false;
 
     function emitPeers() { onPeers([...conns.keys()]); }
 
     function start() {
       peer = new Peer(PREFIX + code, { debug: 1 });
-      peer.on('open', () => { retry = 0; onStatus('online'); onOpen && onOpen(); });
+      peer.on('open', () => { retry = 0; wasOpen = true; onStatus('online'); onOpen && onOpen(); });
       peer.on('connection', (conn) => {
         let cid = null;
         conn.on('data', (msg) => {
@@ -45,7 +47,9 @@
           // our old session still holds the id on the signalling server; it frees up within ~a minute
           onStatus('claiming');
           peer.destroy();
-          if (!dead) setTimeout(start, Math.min(2000 + retry++ * 1000, 8000));
+          const again = () => { if (!dead) setTimeout(start, Math.min(2000 + retry++ * 1000, 8000)); };
+          if (!(useProbe || wasOpen) || !onLostId) return again();
+          probe(code).then((alive) => { if (dead) return; if (alive) { dead = true; onLostId(); } else again(); });
         } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
           onStatus('reconnecting');
         }
@@ -61,10 +65,26 @@
     };
   }
 
+  // Resolves true if a host is answering on the room id right now.
+  function probe(code) {
+    return new Promise((resolve) => {
+      let done = false;
+      const p = new Peer({ debug: 0 });
+      const finish = (v) => { if (done) return; done = true; clearTimeout(t); setTimeout(() => p.destroy(), 100); resolve(v); };
+      const t = setTimeout(() => finish(false), 8000);
+      p.on('open', () => {
+        const c = p.connect(PREFIX + code, { reliable: true });
+        c.on('open', () => finish(true));
+        c.on('error', () => finish(false));
+      });
+      p.on('error', () => finish(false));
+    });
+  }
+
   // Client: connects to the host and keeps reconnecting.
   function client(code, myId, name, hello, { onMessage, onStatus }) {
     let peer = null, conn = null, dead = false, timer = null, lastMsg = 0, fails = 0;
-    const backoff = () => Math.min(1500 * 2 ** fails++, 15000);
+    const backoff = () => Math.min(1500 * 2 ** fails++, 8000);
 
     function scheduleConnect(ms) { clearTimeout(timer); if (!dead) timer = setTimeout(connect, ms); }
 
@@ -111,5 +131,5 @@
     };
   }
 
-  root.Net = { host, client, randomCode };
+  root.Net = { host, client, probe, randomCode };
 })(this);

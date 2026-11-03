@@ -147,3 +147,5 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .away { font-size: 13px; color: var(--muted); margin-top: 8px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 12px; }
 .away b { color: var(--text); font-weight: 600; }
 .banner.row > span { flex: 1; }
+.banner.hostlost { border-color: var(--red); background: #3b1210; flex-wrap: wrap; }
+.menu .dot { vertical-align: 1px; margin-right: 6px; }

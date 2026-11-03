@@ -27,6 +27,7 @@
   let hist = [];          // host: undo snapshots
   let clockSkew = 0;      // client: host time - local time
   let kicked = false;
+  let hostLostAt = null;  // client: when the connection to the host dropped
   const ui = { raiseOpen: false, raiseTo: 0, sheet: null, proxy: false, sd: null, sdHand: 0, wasMyTurn: false };
 
   const fmt = (n) => Number(n || 0).toLocaleString('en-US');
@@ -47,14 +48,23 @@
 
   function saveHost() { store.set(HOST_KEY, { code, S, hist: hist.slice(-30) }); }
 
-  function startHost(c, game, h) {
-    role = 'host'; code = c; S = game; hist = h || [];
+  // probe: if the room id is already taken, check whether another host is live there
+  // (someone took over while we were gone) and step down to player instead of fighting for it.
+  function startHost(c, game, h, probe) {
+    role = 'host'; code = c; S = game; hist = h || []; online = new Set(); hostLostAt = null;
+    S.hostId = myId;
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
     net = Net.host(code, {
+      probe,
       onStatus(st) { netStatus = st; render(); },
       onPeers(ids) { online = new Set(ids); broadcast(); render(); },
+      onLostId() { becomeClient('มีเจ้ามือคนใหม่แล้ว — สลับเป็นผู้เล่น'); },
       onMessage(cid, msg) {
-        if (msg.t === 'hello') {
+        if (msg.t === 'handoffAck' && handoffTimer && cid === S.hostId) {
+          clearTimeout(handoffTimer); handoffTimer = null;
+          broadcast();
+          setTimeout(() => becomeClient(`ส่งต่อให้ ${pById(cid).name} เป็นเจ้ามือแล้ว`), 300);
+        } else if (msg.t === 'hello') {
           if ((S.removed || []).includes(cid) && !msg.rejoin) { net.send(cid, { t: 'kicked' }); return; }
           S.removed = (S.removed || []).filter((x) => x !== cid);
           const name = String(msg.name || 'ผู้เล่น').slice(0, 16);
@@ -69,6 +79,30 @@
     });
     saveHost();
     render();
+  }
+
+  // Planned handoff: send the whole game to another phone; it claims the room once we let go.
+  let handoffTimer = null;
+  function handoff(targetId) {
+    const t = pById(targetId);
+    if (!online.has(targetId)) return toast(`${t.name} ไม่ได้ออนไลน์อยู่`);
+    const prev = S.hostId;
+    S.hostId = targetId;
+    S.log.push(`👑 ${t.name} เป็นเจ้ามือแทน`);
+    net.send(targetId, { t: 'handoff', s: S, hist: hist.slice(-30) });
+    handoffTimer = setTimeout(() => {
+      handoffTimer = null; S.hostId = prev; S.log.pop();
+      toast(`ส่งต่อไม่สำเร็จ — เครื่องของ ${t.name} ไม่ตอบ`); render();
+    }, 6000);
+    toast(`กำลังส่งต่อให้ ${t.name}…`, true);
+  }
+
+  function becomeClient(msg) {
+    store.del(HOST_KEY);
+    if (net) net.destroy();
+    hist = []; online = new Set(); ui.sheet = null; ui.proxy = false;
+    toast(msg, true);
+    startClient(code);
   }
 
   function broadcast() {
@@ -146,10 +180,21 @@
     role = 'client'; code = c;
     store.set('pk:name', myName);
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
+    hostLostAt = null;
     net = Net.client(code, myId, myName, hello, {
-      onStatus(st) { netStatus = st; render(); },
+      onStatus(st) {
+        netStatus = st;
+        if (st === 'online') hostLostAt = null;
+        else if (S && hostLostAt == null) hostLostAt = Date.now();
+        render();
+      },
       onMessage(msg) {
-        if (msg.t === 'state') {
+        if (msg.t === 'handoff') {
+          net.send({ t: 'handoffAck' });
+          toast('คุณเป็นเจ้ามือแล้ว 👑', true);
+          // give the old host a moment to release the room id
+          setTimeout(() => { net.destroy(); startHost(code, msg.s, msg.hist, false); }, 1200);
+        } else if (msg.t === 'state') {
           clockSkew = msg.now - Date.now();
           S = msg.s; online = new Set(msg.online); kicked = false;
           render();
@@ -206,7 +251,7 @@
     ui.wasMyTurn = myTurn;
 
     const scrollY = window.scrollY;
-    $app.innerHTML = topBar() + `<div class="wrap">${S.handNo === 0 && !h ? lobby() : table()}</div>` + bottomBar(actor) + sheet();
+    $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : table()}</div>` + bottomBar(actor) + sheet();
     window.scrollTo(0, scrollY);
     updateTimer();
   }
@@ -288,7 +333,36 @@
     </div>`;
   }
 
-  function isOnline(id) { return (isHost() && id === myId) || online.has(id) || (!isHost() && id === myId && netStatus === 'online'); }
+  function isOnline(id) {
+    if (isHost()) return id === myId || online.has(id);
+    return netStatus === 'online' && (id === myId || id === S.hostId || online.has(id));
+  }
+
+  // Emergency takeover: every phone holds the latest state, so a player can become the host.
+  // Only the first online player in seat order gets the button at 30 s, so two phones don't
+  // race for the room; after 90 s anyone can.
+  const TAKEOVER_BACKUP_S = 30, TAKEOVER_ANY_S = 90;
+  function takeoverBackup() {
+    const cands = S.players.filter((p) => p.id !== S.hostId && online.has(p.id));
+    return cands.find((p) => !p.left) || cands[0] || null;
+  }
+
+  function hostLostBanner() {
+    if (isHost() || hostLostAt == null) return '';
+    const secs = Math.floor((Date.now() - hostLostAt) / 1000);
+    const hostName = (pById(S.hostId) || {}).name || 'เจ้ามือ';
+    const backup = takeoverBackup();
+    let body;
+    if (secs < TAKEOVER_BACKUP_S) body = `<span>⚠️ ติดต่อเจ้ามือ (${esc(hostName)}) ไม่ได้ · ${secs} วิ — กำลังลองใหม่…</span>`;
+    else if (!backup || backup.id === myId || secs >= TAKEOVER_ANY_S) {
+      body = `<span>⚠️ เจ้ามือ (${esc(hostName)}) หลุดไป ${secs} วิ — เล่นต่อจากเครื่องคุณได้</span>
+        <button class="primary" style="flex:none" data-a="takeover">👑 รับเป็นเจ้ามือแทน</button>`;
+    } else {
+      body = `<span>⚠️ เจ้ามือหลุดไป ${secs} วิ · รอ <b>${esc(backup.name)}</b> กด "รับเป็นเจ้ามือแทน" (อีก ${TAKEOVER_ANY_S - secs} วิ ทุกคนกดได้)</span>`;
+    }
+    return `<div class="banner row hostlost">${body}</div>`;
+  }
+  setInterval(() => { if (role === 'client' && hostLostAt != null && S) render(); }, 1000);
 
   function table() {
     const h = S.hand;
@@ -342,7 +416,7 @@
     const won = h && h.done && h.result && h.result[p.id] ? `<div class="won">+${fmt(h.result[p.id])}</div>` : '';
     return `<div class="${cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${esc(p.name)}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span></div>
+      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span></div>
       <div class="stack">${fmt(p.stack)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
@@ -412,7 +486,7 @@
   // ---------- sheets ----------
   function sheet() {
     if (!ui.sheet) return '';
-    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet }[ui.sheet];
+    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, handoff: handoffSheet }[ui.sheet];
     if (!body) return '';
     const [title, html] = body();
     return `<div class="sheet-bg" data-a="closeSheet"><div class="sheet" data-stop="1">
@@ -438,11 +512,20 @@
       ${tour ? `<button data-a="cmd" data-c="pause" data-v="${S.pausedAt != null ? '' : '1'}">${S.pausedAt != null ? '▶ เดินเวลาต่อ' : '⏸ หยุดเวลา Blind'}</button>
         <div class="grid2"><button data-a="cmd" data-c="level" data-d="-1">◀ Level ก่อน</button><button data-a="cmd" data-c="level" data-d="1">Level ถัดไป ▶</button></div>` : ''}
       <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
+      <button data-a="sheet" data-v="handoff">👑 เปลี่ยนเจ้ามือ (ส่งต่อให้คนอื่น)</button>
       <button data-a="sheet" data-v="summary">📊 สรุปผล / เงิน</button>
       <button data-a="sheet" data-v="log">📜 ประวัติ</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
       <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
     </div>`];
+  }
+
+  function handoffSheet() {
+    const cands = S.players.filter((p) => p.id !== myId);
+    const rows = cands.map((p) => `<button data-a="handoff" data-id="${esc(p.id)}" ${online.has(p.id) ? '' : 'disabled'}>
+      <span class="dot ${online.has(p.id) ? 'on' : 'off'}"></span> ${esc(p.name)}${online.has(p.id) ? '' : ' (ออฟไลน์)'}</button>`).join('');
+    return ['เปลี่ยนเจ้ามือ', `<p class="muted small" style="margin-top:0">มือถือของคนที่เลือกจะเป็นเครื่องหลักแทน (ข้อมูลเกมย้ายไปทั้งหมด เล่นต่อจากเดิมได้เลย) เครื่องนี้จะกลายเป็นผู้เล่นธรรมดา ทุกคนอยู่ห้อง ${esc(code)} เดิม</p>
+      <div class="menu">${rows || '<p class="muted">ยังไม่มีผู้เล่นคนอื่น</p>'}</div>`];
   }
 
   function standButton(me) {
@@ -608,14 +691,14 @@
         if (!readName()) return;
         const g = E.newGame({ mode: createMode });
         if (document.getElementById('plays').checked) E.addPlayer(g, myId, myName);
-        startHost(Net.randomCode(), g, []);
+        startHost(Net.randomCode(), g, [], false);
         ui.sheet = 'settings'; render();
         break;
       }
       case 'resume': {
         if (!readName(true)) return;
         const saved = store.get(HOST_KEY, null);
-        startHost(saved.code, saved.S, saved.hist || []);
+        startHost(saved.code, saved.S, saved.hist || [], true);
         break;
       }
       case 'join': {
@@ -696,6 +779,20 @@
         const p = pById(d.pid);
         const who = p.id === myId ? 'คุณ' : p.name;
         if (confirm(`${who}จะลุกจากโต๊ะพร้อมชิป ${fmt(p.stack)}?\nไม่ถูกแจกไพ่จนกว่าจะกด "นั่งกลับ"`)) { ui.sheet = null; send({ c: 'stand', pid: d.pid, v: true }); }
+        break;
+      }
+      case 'handoff': {
+        const p = pById(d.id);
+        if (handoffTimer) return toast('กำลังส่งต่ออยู่…');
+        if (confirm(`ให้ ${p.name} เป็นเจ้ามือแทน?`)) { ui.sheet = null; handoff(d.id); render(); }
+        break;
+      }
+      case 'takeover': {
+        if (!confirm('รับเป็นเจ้ามือแทน? มือถือเครื่องนี้ต้องเปิดแอปค้างไว้ตลอดเกม')) return;
+        S.hostId = myId;
+        S.log.push(`👑 ${myName} รับเป็นเจ้ามือแทน (เจ้ามือเดิมหลุด)`);
+        net.destroy();
+        startHost(code, S, [], true);
         break;
       }
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;

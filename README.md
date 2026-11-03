@@ -5,6 +5,7 @@
 
 - Texas Hold'em No-Limit: blinds/ante, ปุ่ม Dealer หมุนเอง, min-raise, side pot, split pot, คืน uncalled bet
 - Cash game (rebuy + สรุปเงิน) หรือ Tournament (blind ขึ้นตามเวลา, จัดอันดับ)
-- เจ้ามือ: Undo, กดแทนผู้เล่น, แก้ชิป, จัดที่นั่ง, หยุดเวลา
+- เจ้ามือ: Undo, กดแทนผู้เล่น, แก้ชิป, จัดที่นั่ง, หยุดเวลา, ส่งต่อเจ้ามือ
+- เจ้ามือหลุด: ผู้เล่นกด "รับเป็นเจ้ามือแทน" เล่นต่อจาก state ล่าสุดในเครื่องตัวเอง
 
 ทดสอบ engine: `node tests/engine.test.js`
