@@ -133,6 +133,7 @@
         S.settings = Object.assign({}, old, cmd.settings);
         if (S.handNo === 0 && S.settings.startStack !== old.startStack) S.players.forEach((p) => { p.stack = S.settings.startStack; });
         if (S.settings.mode !== old.mode && S.handNo === 0) { S.level = 0; S.levelStart = null; S.pausedAt = null; }
+        S.level = Math.min(S.level, S.settings.levels.length - 1);
         return;
       }
       default: throw new Error('คำสั่งไม่รู้จัก');
@@ -447,7 +448,7 @@
   function settingsSheet() {
     const st = S.settings;
     const locked = S.handNo > 0;
-    const levels = st.levels.map((l) => `${l.sb}/${l.bb}${l.ante ? '/' + l.ante : ''} ${l.min}`).join('\n');
+    const levels = st.levels.map((l, i) => levelRow(l, i, st.mode === 'tournament' && S.levelStart != null && i === S.level)).join('');
     return ['ตั้งค่า', `
       <label>รูปแบบเกม${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
       <select id="s_mode" ${locked ? 'disabled' : ''}><option value="cash" ${st.mode === 'cash' ? 'selected' : ''}>Cash game</option><option value="tournament" ${st.mode === 'tournament' ? 'selected' : ''}>Tournament</option></select>
@@ -460,10 +461,37 @@
         <p class="muted small">เปลี่ยน blind มีผลตั้งแต่มือถัดไป</p>
       </div>
       <div id="tourBox" ${st.mode === 'tournament' ? '' : 'hidden'}>
-        <label>โครงสร้าง Blind: แต่ละบรรทัด = <b>SB/BB[/ante] นาที</b></label>
-        <textarea id="s_levels">${esc(levels)}</textarea>
+        <label>โครงสร้าง Blind</label>
+        <div class="lvhead"><span>Lv</span><span>SB</span><span>BB</span><span>Ante</span><span>นาที</span><span></span></div>
+        <div id="lvRows">${levels}</div>
+        <button class="ghost" style="width:100%;margin-top:8px" data-a="lvAdd">+ เพิ่ม Level</button>
+        <div class="lvall"><span>ตั้งทุก Level เป็น</span><input id="lvAllMin" type="number" inputmode="numeric" value="${st.levels[0] ? st.levels[0].min : 15}"><span>นาที</span><button class="sm" data-a="lvAllMin">ใช้</button></div>
+        <p class="muted small">Ante = ทุกคนจ่ายก่อนแจกไพ่ (ใส่ 0 = ไม่มี) · พิมพ์ BB แล้ว SB จะเติมให้ครึ่งหนึ่งอัตโนมัติ</p>
       </div>
       <button class="primary" style="width:100%;margin-top:14px" data-a="saveSettings">บันทึก</button>`];
+  }
+
+  function levelRow(l, i, current) {
+    const f = (k, v) => `<input type="number" inputmode="numeric" min="0" data-k="${k}" value="${v}">`;
+    return `<div class="lvrow${current ? ' cur' : ''}"><span class="lvn">${i + 1}</span>${f('sb', l.sb)}${f('bb', l.bb)}${f('ante', l.ante || 0)}${f('min', l.min)}
+      <button class="lvdel" data-a="lvDel" aria-label="ลบ Level">✕</button></div>`;
+  }
+
+  function readLevels() {
+    return [...document.querySelectorAll('#lvRows .lvrow')].map((r) => {
+      const v = (k) => Math.max(0, Math.floor(Number(r.querySelector(`[data-k=${k}]`).value) || 0));
+      return { sb: v('sb'), bb: v('bb'), ante: v('ante'), min: v('min') };
+    });
+  }
+
+  function renumberLevels() {
+    document.querySelectorAll('#lvRows .lvn').forEach((el, i) => { el.textContent = i + 1; });
+  }
+
+  // round a blind to a number people actually use at the table
+  function niceBlind(x) {
+    const step = x >= 2000 ? 500 : x >= 1000 ? 100 : x >= 200 ? 50 : x >= 50 ? 10 : 5;
+    return Math.max(step, Math.round(x / step) * step);
   }
 
   function playersSheet() {
@@ -531,7 +559,12 @@
 
   document.addEventListener('input', (e) => {
     if (e.target.id === 'raiseRange') { ui.raiseTo = Number(e.target.value); syncRaise(); }
-    if (e.target.id === 's_mode') { /* select fires change */ }
+    const k = e.target.dataset && e.target.dataset.k;
+    if (k === 'sb') e.target.dataset.manual = '1';
+    if (k === 'bb') {
+      const sb = e.target.closest('.lvrow').querySelector('[data-k=sb]');
+      if (!sb.dataset.manual) sb.value = Math.floor((Number(e.target.value) || 0) / 2);
+    }
   });
   document.addEventListener('change', (e) => {
     if (e.target.id === 's_mode') {
@@ -647,6 +680,24 @@
       }
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;
       case 'saveSettings': saveSettings(); break;
+      case 'lvAdd': {
+        const lv = readLevels(); const last = lv[lv.length - 1] || { sb: 5, bb: 10, ante: 0, min: 15 };
+        const bb = lv.length ? niceBlind(last.bb * 1.5) : 20;
+        const box = document.getElementById('lvRows');
+        box.insertAdjacentHTML('beforeend', levelRow({ sb: bb / 2, bb, ante: last.ante, min: last.min }, lv.length, false));
+        box.lastElementChild.scrollIntoView({ block: 'nearest' });
+        break;
+      }
+      case 'lvDel':
+        if (document.querySelectorAll('#lvRows .lvrow').length <= 1) return toast('ต้องมีอย่างน้อย 1 Level');
+        el.closest('.lvrow').remove(); renumberLevels();
+        break;
+      case 'lvAllMin': {
+        const m = Math.max(1, Math.floor(Number(document.getElementById('lvAllMin').value) || 0));
+        document.querySelectorAll('#lvRows [data-k=min]').forEach((i) => { i.value = m; });
+        toast(`ตั้งทุก Level เป็น ${m} นาทีแล้ว (กดบันทึก)`, true);
+        break;
+      }
       case 'copy':
         (navigator.clipboard ? navigator.clipboard.writeText(joinUrl()) : Promise.reject()).then(() => toast('คัดลอกแล้ว', true), () => prompt('คัดลอกลิงก์นี้', joinUrl()));
         break;
@@ -671,11 +722,10 @@
       Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money') });
       if (!settings.bb || settings.sb > settings.bb) return toast('Blind ไม่ถูกต้อง');
     } else {
-      const levels = document.getElementById('s_levels').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
-        const m = l.match(/^(\d+)\s*\/\s*(\d+)(?:\s*\/\s*(\d+))?\s+(\d+)/);
-        return m && { sb: +m[1], bb: +m[2], ante: +(m[3] || 0), min: +m[4] };
-      });
-      if (!levels.length || levels.some((x) => !x || !x.bb || !x.min)) return toast('รูปแบบ Blind ผิด เช่น 10/20 15');
+      const levels = readLevels();
+      if (!levels.length) return toast('ต้องมีอย่างน้อย 1 Level');
+      const bad = levels.findIndex((x) => !x.bb || !x.min || x.sb > x.bb);
+      if (bad >= 0) return toast(`Level ${bad + 1}: ใส่ BB และนาทีให้ครบ (SB ต้องไม่เกิน BB)`);
       settings.levels = levels;
     }
     send({ c: 'settings', settings });
