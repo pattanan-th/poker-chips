@@ -3,6 +3,7 @@
 (function () {
   'use strict';
   const E = window.Engine;
+  const Cards = window.Cards;
   const $app = document.getElementById('app');
   const params = new URLSearchParams(location.search);
 
@@ -25,6 +26,7 @@
   let netStatus = 'offline';
   let net = null;
   let hist = [];          // host: undo snapshots
+  let secrets = {};       // host: app-dealt decks by hand number (never broadcast)
   let clockSkew = 0;      // client: host time - local time
   let kicked = false;
   let hostLostAt = null;  // client: when the connection to the host dropped
@@ -74,14 +76,14 @@
 
   let lastRemember = 0;
   function saveHost() {
-    store.set(hostKey(code), { code, S, hist: hist.slice(-30) });
+    store.set(hostKey(code), { code, S, hist: hist.slice(-30), secrets });
     if (Date.now() - lastRemember > 30000) { lastRemember = Date.now(); rememberRoom(code, 'host', S); }
   }
 
   // probe: if the room id is already taken, check whether another host is live there
   // (someone took over while we were gone) and step down to player instead of fighting for it.
-  function startHost(c, game, h, probe) {
-    role = 'host'; code = c; S = game; hist = h || []; online = new Set(); hostLostAt = null;
+  function startHost(c, game, h, probe, sec) {
+    role = 'host'; code = c; S = game; hist = h || []; secrets = sec || {}; online = new Set(); hostLostAt = null;
     S.hostId = myId;
     lastRemember = Date.now(); rememberRoom(code, 'host', S);
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
@@ -122,7 +124,7 @@
     handingOff = true;
     S.hostId = targetId;
     S.log.push(`👑 ${t.name} เป็นเจ้ามือแทน`);
-    net.send(targetId, { t: 'handoff', s: S, hist: hist.slice(-30) });
+    net.send(targetId, { t: 'handoff', s: S, hist: hist.slice(-30), secrets });
     handoffTimer = setTimeout(() => {
       handoffTimer = null; handingOff = false; S.hostId = prev; S.log.pop();
       toast(`ส่งต่อไม่สำเร็จ — เครื่องของ ${t.name} ไม่ตอบ`); render();
@@ -134,7 +136,7 @@
     store.del(hostKey(code));
     rememberRoom(code, 'client', S);
     if (net) net.destroy();
-    hist = []; online = new Set(); ui.sheet = null; ui.proxy = false; handingOff = false;
+    hist = []; secrets = {}; online = new Set(); ui.sheet = null; ui.proxy = false; handingOff = false;
     toast(msg, true);
     startClient(code);
   }
@@ -142,10 +144,22 @@
   function broadcast() {
     if (!net || !isHost()) return;
     const ol = [...online];
-    net.broadcast(() => ({ t: 'state', s: S, online: ol, now: Date.now() }));
+    net.broadcast((cid) => ({ t: 'state', s: S, online: ol, now: Date.now(), hole: holeFor(cid) }));
   }
 
   setInterval(() => { if (isHost() && net) net.broadcast(() => ({ t: 'ping', now: Date.now() })); }, 4000);
+
+  function holeFor(id) {
+    const h = S && S.hand; const d = h && secrets[h.no];
+    return d && d.hole[id] && h.ids.includes(id) ? { no: h.no, cards: d.hole[id] } : null;
+  }
+
+  function myHole() {
+    const h = S && S.hand;
+    if (!h || !h.appCards) return null;
+    const x = isHost() ? holeFor(myId) : ui.hole;
+    return x && x.no === h.no ? x.cards : null;
+  }
 
   const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename', 'pdBet'];
   // Pok Deng: the banker runs the round from their own phone too
@@ -173,6 +187,7 @@
         const before = JSON.stringify(S);
         run(cmd);
         if (isPD()) PD.tidy(S);
+        Cards.sync(S, secrets, E);
         hist.push(before);
         if (hist.length > 40) hist.shift();
       }
@@ -217,6 +232,7 @@
       }
       case 'settings': {
         const old = S.settings;
+        if (S.hand && !S.hand.done && cmd.settings.appCards != null && !!cmd.settings.appCards !== !!old.appCards) throw new Error('เปลี่ยนแบบไพ่ได้หลังจบมือ');
         S.settings = Object.assign({}, old, cmd.settings);
         if (S.handNo > 0) S.settings.credit = !!old.credit; // can't switch buy-in style mid-game
         else if (S.settings.startStack !== old.startStack || !!S.settings.credit !== !!old.credit || S.settings.mode !== old.mode) E.resetStacks(S);
@@ -251,10 +267,10 @@
           net.send({ t: 'handoffAck' });
           toast('คุณเป็นเจ้ามือแล้ว 👑', true);
           // give the old host a moment to release the room id
-          setTimeout(() => { net.destroy(); startHost(code, msg.s, msg.hist, false); }, 1200);
+          setTimeout(() => { net.destroy(); startHost(code, msg.s, msg.hist, false, msg.secrets); }, 1200);
         } else if (msg.t === 'state') {
           clockSkew = msg.now - Date.now();
-          S = msg.s; online = new Set(msg.online); kicked = false;
+          S = msg.s; online = new Set(msg.online); kicked = false; ui.hole = msg.hole || null;
           // fill in mode/players for the home screen's recent-rooms card once we know them
           if (!ui.roomNoted) { ui.roomNoted = true; rememberRoom(code, 'client', S); }
           render();
@@ -429,7 +445,7 @@
       <div class="link">${esc(joinUrl())}</div>
     </div>
     <div class="card">
-      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}`}</h2>
+      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
       <div class="players">${list || '<p class="muted">ยังไม่มีผู้เล่น</p>'}</div>
       ${isHost() ? `<p class="muted small">${isPD() ? 'คนแรกในรายการเป็นเจ้ามือป๊อกเด้ง (🏦) เปลี่ยนได้ทีหลัง' : 'เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)'}</p>
         <div class="grid2"><button data-a="sheet" data-v="settings">ตั้งค่า</button><button class="primary" data-a="cmd" data-c="start" ${S.players.length < 2 ? 'disabled' : ''}>เริ่มเกม</button></div>`
@@ -479,12 +495,13 @@
       potHtml = `<div class="lbl">มือที่ ${h.no} จบแล้ว</div><div class="amt">${fmt(total)}</div>
         <div class="hint">${Object.entries(h.result || {}).map(([id, a]) => `${esc((pById(id) || {}).name)} ได้ ${fmt(a)}`).join(' · ')}</div>`;
     } else {
-      const hint = h.street === 'showdown' ? (h.runout ? 'เปิดไพ่กลางให้ครบ 5 ใบ แล้วหงายไพ่' : 'หงายไพ่ — เจ้ามือเลือกผู้ชนะ')
+      const hint = h.appCards ? '' : h.street === 'showdown' ? (h.runout ? 'เปิดไพ่กลางให้ครบ 5 ใบ แล้วหงายไพ่' : 'หงายไพ่ — เจ้ามือเลือกผู้ชนะ')
         : { flop: 'ดีลเลอร์เปิด Flop 3 ใบ', turn: 'ดีลเลอร์เปิด Turn', river: 'ดีลเลอร์เปิด River', preflop: 'แจกไพ่คนละ 2 ใบ' }[h.street];
       const side = h.pots && h.pots.length > 1 ? `<div class="sidepots">${h.pots.map((p, i) => `${i ? 'Side ' + i : 'Main'} ${fmt(p.amount)}`).join(' · ')}</div>` : '';
       potHtml = `<div class="lbl">Pot · มือที่ ${h.no}</div><div class="amt">${fmt(pot)}</div>${side}
-        <span class="street">${E.streetName(h.street)}</span><div class="hint">${hint}</div>`;
+        <span class="street">${E.streetName(h.street)}</span>${hint ? `<div class="hint">${hint}</div>` : ''}`;
     }
+    if (h && h.appCards) potHtml += boardHtml(h.board || []);
     const lastLog = S.log.slice(-2).map(esc).join('<br>');
     const me = pById(myId);
     const away = S.players.filter((p) => p.left);
@@ -492,7 +509,7 @@
       <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
     const timeUp = ui.timeUp ? `<div class="banner row"><span>⏰ หมดเวลาเล่นแล้ว — เล่นมือนี้ให้จบแล้วดูว่าใครโอนให้ใคร</span>
       <button class="primary sm" style="flex:none" data-a="sheet" data-v="summary">💸 สรุป</button></div>` : '';
-    return `${timeUp}${standBanner}<div class="card pot">${potHtml}</div>${hostTools()}
+    return `${timeUp}${standBanner}<div class="card pot">${potHtml}</div>${myCardsPanel()}${hostTools()}
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
       ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : ''}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
@@ -538,12 +555,38 @@
     const won = h && h.done && h.result && h.result[p.id] ? `<div class="won">+${fmt(h.result[p.id])}</div>` : '';
     return `<div class="${cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span></div>
+      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm')} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
       <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
 
+  // ---------- app-dealt cards ----------
+  const SUIT_SYM = { s: '♠', h: '♥', d: '♦', c: '♣' };
+  function cardHtml(c, size) {
+    if (c == null) return `<span class="pc back ${size || ''}"></span>`;
+    const r = Cards.RANKS[Cards.rankOf(c)]; const su = Cards.SUITS[Cards.suitOf(c)];
+    return `<span class="pc ${size || ''} ${su === 'h' || su === 'd' ? 'red' : ''}">${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
+  }
+  const cardsHtml = (list, size) => `<span class="pcs">${list.map((c) => cardHtml(c, size)).join('')}</span>`;
+  function boardHtml(board) {
+    const slots = [0, 1, 2, 3, 4].map((i) => (i < board.length ? cardHtml(board[i]) : '<span class="pc slot"></span>')).join('');
+    return `<div class="board">${slots}</div>`;
+  }
+
+  function myCardsPanel() {
+    const h = S.hand; const cards = myHole();
+    if (!h || !cards) return '';
+    const folded = h.folded[myId];
+    const made = !folded && h.board && h.board.length >= 3 ? Cards.best(cards.concat(h.board)) : null;
+    if (ui.holeHidden) {
+      return `<div class="card mycards hidden" data-a="holeHide"><span class="pcs">${cardHtml(null, 'lg')}${cardHtml(null, 'lg')}</span><span class="muted small">ไพ่ของคุณ · แตะเพื่อดู</span></div>`;
+    }
+    return `<div class="card mycards ${folded ? 'fold' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg')}
+      <span class="small"><b>ไพ่ของคุณ</b>${folded ? ' · Fold แล้ว' : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
+  }
+
   function showdown() {
+    if (S.hand.appCards) return '';
     const h = S.hand;
     if (!isHost()) return `<div class="card center muted">รอเจ้ามือเลือกผู้ชนะ…</div>`;
     const pots = h.pots.map((pot, i) => `<div class="pot-pick"><div class="h">${h.pots.length > 1 ? (i ? `Side pot ${i}` : 'Main pot') : 'Pot'} · ${fmt(pot.amount)} — แตะผู้ชนะ (เสมอเลือกได้หลายคน)</div>
@@ -602,7 +645,7 @@
       </div>`;
     }
     return `<div class="actbar"><div class="in">
-      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : '<b>ถึงตาคุณ!</b>'}</span><span>${chipWord()} ${chips(a.p)}${a.toCall ? ` · ต้อง call ${fmt(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
+      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : '<b>ถึงตาคุณ!</b>'}</span><span>${!proxy && myHole() && !ui.holeHidden ? cardsHtml(myHole(), 'sm') + ' ' : ''}${chipWord()} ${chips(a.p)}${a.toCall ? ` · ต้อง call ${fmt(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
       <div class="btns"><button class="danger" data-a="act" data-t="fold">Fold</button>${callBtn}${raiseBtn}</div>
       ${raise}
     </div></div>`;
@@ -880,6 +923,10 @@
     return ['ตั้งค่า', `
       <label>รูปแบบเกม${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
       <select id="s_mode" ${locked ? 'disabled' : ''}><option value="cash" ${st.mode === 'cash' ? 'selected' : ''}>Cash game</option><option value="tournament" ${st.mode === 'tournament' ? 'selected' : ''}>Tournament</option></select>
+      <label>ไพ่</label>
+      <input type="hidden" id="s_cards" value="${st.appCards ? 1 : 0}">
+      <div class="seg" id="cardsSeg">${[[0, '🃏 ใช้ไพ่จริง'], [1, '📱 แอปแจกไพ่ให้']].map(([v, l]) => `<button class="${(st.appCards ? 1 : 0) === v ? 'on' : ''}" data-a="cardsMode" data-v="${v}">${l}</button>`).join('')}</div>
+      <p class="muted small" id="cardsHint" ${st.appCards ? '' : 'hidden'}>แอปสับไพ่แบบสุ่มเท่ากันทุกใบ แต่ละคนเห็นแค่ไพ่ 2 ใบของตัวเองในมือถือ ไพ่กลางเปิดให้เองทีละรอบ และตัดสินผู้ชนะให้อัตโนมัติ (เปลี่ยนได้หลังจบมือ)</p>
       <div id="buyInBox" ${st.mode === 'cash' ? '' : 'hidden'}>
         <label>Buy-in${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
         <input type="hidden" id="s_credit" value="${st.credit ? 1 : 0}">
@@ -1058,6 +1105,8 @@
       const deltas = h.ids.slice().sort((a, b) => h.delta[b] - h.delta[a]).map((id) => `<span>${nm(id)} ${signed(h.delta[id])}</span>`).join('');
       return `<details class="hand" ${i === 0 ? 'open' : ''}><summary><b>มือที่ ${h.no}</b> · ${winners || '-'}${mine}</summary>
         <div class="muted small">Blinds ${fmt(h.blinds.sb)}/${fmt(h.blinds.bb)}${h.blinds.ante ? ` ante ${fmt(h.blinds.ante)}` : ''} · Dealer ${nm(h.btn)} · ${ended}</div>
+        ${h.board ? `<div class="hst"><b>Board</b> ${h.board.length ? cardsHtml(h.board, 'sm') : '-'}</div>` : ''}
+        ${h.shown ? Object.entries(h.shown).map(([id, x]) => `<div class="hst">${nm(id)} ${cardsHtml(x.cards, 'sm')} ${esc(x.hand)}</div>`).join('') : ''}
         ${streets}<div class="hst"><b>ผล</b> ${pots}</div><div class="hdelta">${deltas}</div></details>`;
     }).join('');
     return ['ประวัติรายมือ', `${items || '<p class="muted">ยังไม่มีมือที่จบ</p>'}
@@ -1189,7 +1238,7 @@
         if (!readName(true)) return;
         const saved = store.get(hostKey(d.code), null);
         if (!saved) return toast('ไม่พบข้อมูลห้องนี้ในเครื่อง');
-        startHost(saved.code, saved.S, saved.hist || [], true);
+        startHost(saved.code, saved.S, saved.hist || [], true, saved.secrets);
         break;
       }
       case 'joinRoom':
@@ -1343,6 +1392,12 @@
         startHost(code, S, [], true);
         break;
       }
+      case 'cardsMode':
+        document.getElementById('s_cards').value = d.v;
+        document.querySelectorAll('#cardsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
+        document.getElementById('cardsHint').hidden = d.v !== '1';
+        break;
+      case 'holeHide': ui.holeHidden = !ui.holeHidden; render(); break;
       case 'creditMode': document.getElementById('s_credit').value = d.v; markCredit(); break;
       case 'sessionPreset': document.getElementById('s_session').value = d.v; markSessionSeg(); break;
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;
@@ -1388,7 +1443,7 @@
       ui.sheet = null; return render();
     }
     const mode = document.getElementById('s_mode').value;
-    const settings = { mode, startStack: num('s_stack') || 1000 };
+    const settings = { mode, startStack: num('s_stack') || 1000, appCards: document.getElementById('s_cards').value === '1' };
     if (mode === 'cash') {
       Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: num('s_session'),
         credit: document.getElementById('s_credit').value === '1', chipBaht: Math.max(0, Number(document.getElementById('s_rate').value) || 0) });

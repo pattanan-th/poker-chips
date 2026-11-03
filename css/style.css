@@ -210,3 +210,21 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .pdquick { grid-template-columns: repeat(5, 1fr); }
 #pdBetInput { font-size: 20px; font-weight: 700; text-align: center; color: var(--gold); }
 .pdlines { flex-direction: column; gap: 4px; }
+
+/* app-dealt cards */
+.pcs { display: inline-flex; gap: 4px; vertical-align: middle; }
+.pc { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 40px; height: 56px; border-radius: 6px; background: #fbfaf5; color: #1a1a1a; font-weight: 800; font-size: 18px; line-height: 1; box-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
+.pc i { font-style: normal; font-size: 18px; margin-top: 2px; }
+.pc.red { color: #d0312d; }
+.pc.back { background: repeating-linear-gradient(45deg, #b33a2e 0 4px, #8e2b22 4px 8px); border: 2px solid #fbfaf5; }
+.pc.slot { background: transparent; border: 1px dashed var(--line); box-shadow: none; }
+.pc.sm { width: 24px; height: 32px; font-size: 12px; border-radius: 4px; }
+.pc.sm i { font-size: 11px; margin-top: 0; }
+.pc.lg { width: 54px; height: 76px; font-size: 24px; }
+.pc.lg i { font-size: 24px; }
+.board { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+.mycards { display: flex; align-items: center; gap: 14px; cursor: pointer; padding: 10px 14px; }
+.mycards.fold .pcs { opacity: .4; }
+.gold { color: var(--gold); }
+.pl .shown { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gold); margin-top: 3px; }
+.who .pcs { margin-right: 4px; }
