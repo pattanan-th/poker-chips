@@ -72,9 +72,19 @@
     turn() { tone(659, 0, 0.18, { vol: 0.18 }); tone(880, 0.13, 0.3, { vol: 0.18 }); },
     win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.28, { type: 'triangle', vol: 0.15 })); sounds.chip(5); },
     pot() { sounds.chip(4); },
+    // a card slapped face up
+    flip(n) { for (let i = 0; i < (n || 1); i++) { noise(i * 0.12, 0.09, { freq: 1400, to: 600, q: 0.8, vol: 0.35 }); tone(140, i * 0.12, 0.06, { type: 'triangle', vol: 0.2 }); } },
+    join() { tone(523, 0, 0.15, { vol: 0.14 }); tone(784, 0.1, 0.25, { vol: 0.14 }); },
+    leave() { tone(659, 0, 0.15, { vol: 0.12 }); tone(440, 0.1, 0.25, { vol: 0.12 }); },
+    buyin() { sounds.chip(6); },
+    level() { [0, 0.18, 0.36].forEach((at) => tone(988, at, 0.12, { type: 'square', vol: 0.07 })); },
+    bust() { [440, 370, 311, 220].forEach((f, i) => tone(f, i * 0.12, 0.2, { type: 'triangle', vol: 0.14 })); },
+    alarm() { for (let i = 0; i < 4; i++) { tone(880, i * 0.3, 0.12, { type: 'square', vol: 0.08 }); tone(660, i * 0.3 + 0.13, 0.12, { type: 'square', vol: 0.08 }); } },
+    undo() { noise(0, 0.25, { freq: 400, to: 3000, filter: 'bandpass', q: 1.5, vol: 0.2 }); },
   };
 
   function play(name, arg) {
+    if (root.sfxLog) root.sfxLog.push(name); // debugging: set window.sfxLog = [] to trace
     if (muted) return;
     try { sounds[name](arg); } catch (e) { /* audio unavailable */ }
   }
@@ -87,18 +97,63 @@
     return null;
   }
 
+  // a few numbers that tell what changed at the table between two renders
+  function snapshot(S, me) {
+    const h = S.hand;
+    const ps = S.players;
+    const x = {
+      players: ps.length,
+      away: ps.filter((p) => p.left).length,
+      bought: ps.reduce((a, p) => a + (p.buyIns || 0), 0),
+      level: S.level || 0,
+      busted: (S.finishOrder || []).length,
+    };
+    if (S.settings.mode === 'pokdeng' && S.pd) {
+      const r = S.pd.round;
+      Object.assign(x, { pd: true, pdNo: r.no, pdPhase: r.phase, pdBets: Object.values(r.bets || {}).reduce((a, b) => a + (Number(b) || 0), 0), banker: S.pd.bankerId });
+      const last = S.pd.rounds && S.pd.rounds[S.pd.rounds.length - 1];
+      x.pdMine = last && last.delta ? last.delta[me] || 0 : 0;
+    } else if (h) {
+      Object.assign(x, { no: h.no, n: h.actions.length, street: h.street, done: !!h.done, myTurn: !h.done && h.toAct === me,
+        shown: h.shown ? Object.keys(h.shown).length : 0, won: !!(h.result && h.result[me]) });
+    }
+    return x;
+  }
+
   function update(S, me) {
-    const h = S && S.hand;
-    const now = h ? { no: h.no, n: h.actions.length, street: h.street, done: !!h.done, myTurn: !h.done && h.toAct === me } : null;
+    const now = S ? snapshot(S, me) : null;
     const was = prev; prev = now;
-    if (!now || !was || S.settings.mode === 'pokdeng') return;
-    if (now.no !== was.no) { play('deal', 2); return; }
-    const fresh = h.actions.slice(was.n);
-    const last = fresh.length ? actionSound(fresh[fresh.length - 1].t) : null;
-    if (last) play(...last);
-    if (now.street !== was.street && ['flop', 'turn', 'river'].includes(now.street)) setTimeout(() => play('deal', now.street === 'flop' ? 3 : 1), last ? 250 : 0);
-    if (now.done && !was.done) setTimeout(() => play(h.result && h.result[me] ? 'win' : 'pot'), 300);
-    else if (now.myTurn && !was.myTurn) setTimeout(() => play('turn'), last ? 350 : 0);
+    if (!now || !was) return;
+    const q = []; // [sound, arg, delay ms]
+    if (now.players > was.players) q.push(['join']);
+    if (now.away > was.away) q.push(['leave']);
+    else if (now.away < was.away) q.push(['join']);
+    if (now.bought > was.bought && now.players === was.players) q.push(['buyin']);
+    if (now.level > was.level) q.push(['level']);
+    if (now.busted > was.busted) q.push(['bust']);
+
+    if (now.pd) {
+      if (now.pdNo !== was.pdNo) q.push([now.pdMine > 0 ? 'win' : 'pot']);
+      else if (now.pdPhase !== was.pdPhase) q.push(now.pdPhase === 'result' ? ['deal', 3] : ['undo']);
+      else if (now.pdBets !== was.pdBets) q.push(['chip', 3]);
+      if (now.banker !== was.banker && now.pdNo === was.pdNo) q.push(['join']);
+    } else if (now.no != null) {
+      const h = S.hand;
+      if (was.no == null || now.no > was.no) q.push(['deal', 2]);
+      else if (now.no < was.no || now.n < was.n || (was.done && !now.done)) q.push(['undo']);
+      else {
+        const fresh = h.actions.slice(was.n);
+        const last = fresh.length ? actionSound(fresh[fresh.length - 1].t) : null;
+        if (last) q.push(last);
+        let at = last ? 250 : 0;
+        if (now.street !== was.street && ['flop', 'turn', 'river'].includes(now.street)) { q.push(['deal', now.street === 'flop' ? 3 : 1, at]); at += 400; }
+        const turned = now.shown - (was.shown || 0);
+        if (turned > 0) { q.push(['flip', Math.min(turned, 4), at]); at += 150 + Math.min(turned, 4) * 120; }
+        if (now.done && !was.done) q.push([now.won ? 'win' : 'pot', null, at + 200]);
+        else if (now.myTurn && !was.myTurn) q.push(['turn', null, at + 100]);
+      }
+    }
+    q.forEach(([name, arg, ms]) => (ms ? setTimeout(() => play(name, arg), ms) : play(name, arg)));
   }
 
   function setMuted(v) {

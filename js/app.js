@@ -1213,6 +1213,7 @@
       if (up && !ui.timeUp) {
         toast('⏰ หมดเวลาเล่นแล้ว — จบมือนี้แล้วดูสรุปการโอน', true);
         try { navigator.vibrate && navigator.vibrate([300, 100, 300]); } catch (e) { /* ignore */ }
+        Sfx.play('alarm');
       }
       const changed = up !== !!ui.timeUp;
       ui.timeUp = up;
