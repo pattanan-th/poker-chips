@@ -251,8 +251,13 @@
     ui.wasMyTurn = myTurn;
 
     const scrollY = window.scrollY;
+    // a state broadcast can arrive while the player is typing a bet; keep their input
+    ui.typingRaise = document.activeElement && document.activeElement.id === 'raiseInput';
     $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : table()}</div>` + bottomBar(actor) + sheet();
     window.scrollTo(0, scrollY);
+    const ri = ui.typingRaise && document.getElementById('raiseInput');
+    if (ri) { ri.focus(); syncRaise(true); }
+    ui.typingRaise = false;
     updateTimer();
   }
 
@@ -453,7 +458,7 @@
 
   function actionBar(id) {
     const a = actorInfo(id);
-    if (!ui.raiseTo || ui.raiseTo < a.minTo || ui.raiseTo > a.maxTo) ui.raiseTo = a.minTo;
+    if (!ui.typingRaise && (!ui.raiseTo || ui.raiseTo < a.minTo || ui.raiseTo > a.maxTo)) ui.raiseTo = a.minTo;
     const proxy = id !== myId;
     const callBtn = a.toCall > 0
       ? `<button class="blue" data-a="act" data-t="call">${a.toCall >= a.p.stack ? 'All-in ' + fmt(a.p.stack) : 'Call ' + fmt(a.toCall)}</button>`
@@ -468,7 +473,9 @@
         .map(([l, v]) => `<button data-a="quick" data-v="${Math.max(a.minTo, Math.min(a.maxTo, v))}">${l}</button>`).join('');
       const step = S.hand.bb;
       raise = `<div class="raise">
-        <div class="amt"><span class="muted small">${a.isBet ? 'Bet' : 'Raise to'}</span> <span id="raiseAmt">${fmt(ui.raiseTo)}</span></div>
+        <div class="amt"><span class="muted small">${a.isBet ? 'Bet' : 'Raise to'}</span>
+          <input id="raiseInput" type="number" inputmode="numeric" enterkeyhint="done" min="${a.minTo}" max="${a.maxTo}" value="${ui.raiseTo}" aria-label="จำนวนชิป"></div>
+        <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fmt(a.minTo)} · สูงสุด ${fmt(a.maxTo)} (All-in)</div>
         <div class="row"><button class="sm" style="flex:none" data-a="step" data-v="${-step}">−</button>
           <input type="range" id="raiseRange" min="${a.minTo}" max="${a.maxTo}" step="1" value="${ui.raiseTo}">
           <button class="sm" style="flex:none" data-a="step" data-v="${step}">+</button></div>
@@ -656,6 +663,7 @@
 
   document.addEventListener('input', (e) => {
     if (e.target.id === 'raiseRange') { ui.raiseTo = Number(e.target.value); syncRaise(); }
+    if (e.target.id === 'raiseInput') { ui.raiseTo = Math.floor(Number(e.target.value) || 0); syncRaise(true); }
     const k = e.target.dataset && e.target.dataset.k;
     if (k === 'sb') e.target.dataset.manual = '1';
     if (k === 'bb') {
@@ -670,11 +678,23 @@
     }
   });
 
-  function syncRaise() {
-    const a = document.getElementById('raiseAmt'); if (a) a.textContent = fmt(ui.raiseTo);
+  // typing: leave the input alone so the cursor doesn't jump while the user types
+  document.addEventListener('keydown', (e) => {
+    if (e.target.id === 'raiseInput' && e.key === 'Enter') { e.preventDefault(); const g = document.getElementById('raiseGo'); if (!g.disabled) g.click(); }
+  });
+  document.addEventListener('focusin', (e) => { if (e.target.id === 'raiseInput') e.target.select(); });
+
+  function syncRaise(typing) {
+    const inp = document.getElementById('raiseInput');
+    if (!inp) return;
+    if (!typing) inp.value = ui.raiseTo;
     const r = document.getElementById('raiseRange'); if (r && Number(r.value) !== ui.raiseTo) r.value = ui.raiseTo;
+    const ok = ui.raiseTo >= Number(inp.min) && ui.raiseTo <= Number(inp.max);
+    inp.classList.toggle('bad', !ok);
+    document.getElementById('raiseHint').classList.toggle('bad', !ok);
     const g = document.getElementById('raiseGo');
-    if (g) g.textContent = g.textContent.replace(/[\d,]+$/, fmt(ui.raiseTo));
+    g.disabled = !ok;
+    g.textContent = g.textContent.replace(/[\d,]*$/, ok ? fmt(ui.raiseTo) : '');
   }
 
   document.addEventListener('click', (e) => {

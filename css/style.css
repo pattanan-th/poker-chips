@@ -149,3 +149,8 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .banner.row > span { flex: 1; }
 .banner.hostlost { border-color: var(--red); background: #3b1210; flex-wrap: wrap; }
 .menu .dot { vertical-align: 1px; margin-right: 6px; }
+.raise .amt input { width: 170px; display: inline-block; margin-left: 6px; text-align: center; font-size: 26px; font-weight: 800; color: var(--gold); padding: 6px 8px; border: 2px solid var(--gold); background: #0a2e23; -moz-appearance: textfield; }
+.raise .amt input::-webkit-outer-spin-button, .raise .amt input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.raise .amt input.bad { border-color: var(--red); color: var(--red); }
+.raisehint { text-align: center; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.raisehint.bad { color: var(--red); font-weight: 600; }
