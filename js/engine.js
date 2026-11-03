@@ -9,7 +9,7 @@
   const DEFAULT_LEVELS = [
     [10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200],
     [150, 300], [200, 400], [300, 600], [400, 800], [500, 1000], [1000, 2000],
-  ].map(([sb, bb]) => ({ sb, bb, ante: 0, min: 15 }));
+  ].map(([sb, bb]) => ({ sb, bb, ante: 0, min: 3 }));
 
   function newGame(settings) {
     return {
@@ -68,7 +68,7 @@
   }
 
   // ---- blinds / tournament clock ----
-  function levelDurMs(s, i) { return (s.settings.levels[i].min || 15) * 60000; }
+  function levelDurMs(s, i) { return (s.settings.levels[i].min || 3) * 60000; }
 
   function tick(s, now) {
     if (s.settings.mode !== 'tournament' || s.levelStart == null || s.pausedAt != null) return;

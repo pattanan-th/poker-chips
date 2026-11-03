@@ -177,7 +177,7 @@ test('tournament: blinds rise with clock, busted players go out', () => {
   E.award(s, [['p0']]);
   assert.ok(s.players[2].out);
   assert.deepStrictEqual(s.finishOrder, ['p2']);
-  E.startHand(s, 16 * 60000);
+  E.startHand(s, 4 * 60000);
   assert.deepStrictEqual(E.blinds(s), { sb: 15, bb: 30, ante: 0 });
   assert.deepStrictEqual(s.hand.ids, ['p0', 'p1']);
 });

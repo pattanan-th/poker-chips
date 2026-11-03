@@ -220,7 +220,7 @@
       <p class="center muted">ไพ่จริงบนโต๊ะ · ชิปบนมือถือ</p>
       <div class="card">
         <label>ชื่อของคุณ</label>
-        <input id="name" maxlength="16" value="${esc(myName)}" placeholder="เช่น ต้อม" autocomplete="nickname">
+        <input id="name" maxlength="16" value="${esc(myName)}" placeholder="เช่น โจโจ้" autocomplete="nickname">
       </div>
       ${resume ? `<button class="primary" style="width:100%" data-a="resume">กลับเข้าห้องเดิม ${esc(saved.code)} (เจ้ามือ)</button>` : ''}
       <div class="card">
@@ -465,7 +465,7 @@
         <div class="lvhead"><span>Lv</span><span>SB</span><span>BB</span><span>Ante</span><span>นาที</span><span></span></div>
         <div id="lvRows">${levels}</div>
         <button class="ghost" style="width:100%;margin-top:8px" data-a="lvAdd">+ เพิ่ม Level</button>
-        <div class="lvall"><span>ตั้งทุก Level เป็น</span><input id="lvAllMin" type="number" inputmode="numeric" value="${st.levels[0] ? st.levels[0].min : 15}"><span>นาที</span><button class="sm" data-a="lvAllMin">ใช้</button></div>
+        <div class="lvall"><span>ตั้งทุก Level เป็น</span><input id="lvAllMin" type="number" inputmode="numeric" value="${st.levels[0] ? st.levels[0].min : 3}"><span>นาที</span><button class="sm" data-a="lvAllMin">ใช้</button></div>
         <p class="muted small">Ante = ทุกคนจ่ายก่อนแจกไพ่ (ใส่ 0 = ไม่มี) · พิมพ์ BB แล้ว SB จะเติมให้ครึ่งหนึ่งอัตโนมัติ</p>
       </div>
       <button class="primary" style="width:100%;margin-top:14px" data-a="saveSettings">บันทึก</button>`];
@@ -681,7 +681,7 @@
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;
       case 'saveSettings': saveSettings(); break;
       case 'lvAdd': {
-        const lv = readLevels(); const last = lv[lv.length - 1] || { sb: 5, bb: 10, ante: 0, min: 15 };
+        const lv = readLevels(); const last = lv[lv.length - 1] || { sb: 5, bb: 10, ante: 0, min: 3 };
         const bb = lv.length ? niceBlind(last.bb * 1.5) : 20;
         const box = document.getElementById('lvRows');
         box.insertAdjacentHTML('beforeend', levelRow({ sb: bb / 2, bb, ante: last.ante, min: last.min }, lv.length, false));
