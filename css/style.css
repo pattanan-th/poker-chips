@@ -193,3 +193,20 @@ table.summary td { vertical-align: top; }
 table.summary .sub { font-size: 12px; color: var(--muted); font-weight: 400; }
 table.summary .sub.pos { color: var(--green); } table.summary .sub.neg { color: var(--red); }
 table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0; font-weight: 700; }
+
+/* Pok Deng */
+.badge.bank { background: #6b4f12; color: var(--gold); }
+.pl.banker { border-color: #6b4f12; background: rgba(242, 193, 78, .06); }
+.pl[data-a] { cursor: pointer; }
+.pdres { border-top: 1px solid var(--line); padding: 10px 0; }
+.pdres .top { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+.pdres .top b { flex: 1; }
+.pdres .seg { margin-top: 4px; }
+.pdres .seg button { padding: 8px 4px; font-size: 14px; }
+.pdres .rseg button.on.win { background: var(--green); color: #04150d; }
+.pdres .rseg button.on.lose { background: var(--red); color: #fff; }
+.pdres .rseg button.on.tie { background: var(--muted); color: #04150d; }
+.pdbank { text-align: right; margin-top: 8px; font-size: 15px; }
+.pdquick { grid-template-columns: repeat(5, 1fr); }
+#pdBetInput { font-size: 20px; font-weight: 700; text-align: center; color: var(--gold); }
+.pdlines { flex-direction: column; gap: 4px; }

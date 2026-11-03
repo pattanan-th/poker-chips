@@ -142,7 +142,9 @@
 
   setInterval(() => { if (isHost() && net) net.broadcast(() => ({ t: 'ping', now: Date.now() })); }, 4000);
 
-  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename'];
+  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename', 'pdBet'];
+  // Pok Deng: the banker runs the round from their own phone too
+  const BANKER_CMDS = ['pdBet', 'pdDeal', 'pdReopen', 'pdSettle'];
 
   function apply(cmd, from) {
     const fromHost = from === myId;
@@ -152,7 +154,8 @@
       // the player's screen may lag behind (e.g. someone raised meanwhile): don't apply a stale call
       if (!fromHost && cmd.c === 'act' && cmd.seq !== (S.seq || 0)) throw new Error('ยอดบนโต๊ะเปลี่ยนไปแล้ว — ดูอีกครั้งแล้วกดใหม่');
       if (!fromHost) {
-        if (!PLAYER_CMDS.includes(cmd.c) || cmd.pid !== from) throw new Error('เฉพาะเจ้ามือเท่านั้น');
+        const banker = isPD() && S.pd && S.pd.bankerId === from && BANKER_CMDS.includes(cmd.c);
+        if (!banker && (!PLAYER_CMDS.includes(cmd.c) || cmd.pid !== from)) throw new Error(`เฉพาะ${hostWord()}เท่านั้น`);
         if (cmd.c === 'rebuy' && (S.settings.mode !== 'cash' || pById(from).stack > 0)) throw new Error('Rebuy ได้เมื่อชิปหมด (เฉพาะ Cash game)');
       }
       const seq = (S.seq || 0) + 1;
@@ -164,6 +167,7 @@
       } else {
         const before = JSON.stringify(S);
         run(cmd);
+        if (isPD()) PD.tidy(S);
         hist.push(before);
         if (hist.length > 40) hist.shift();
       }
@@ -178,7 +182,15 @@
     const t = Date.now();
     switch (cmd.c) {
       case 'act': return E.act(S, cmd.pid, cmd.type, cmd.amount);
-      case 'start': return E.startHand(S, t);
+      case 'start':
+        if (isPD()) { PD.init(S); S.handNo = Math.max(S.handNo, 1); return; }
+        return E.startHand(S, t);
+      case 'pdBet': return PD.setBet(S, cmd.pid, cmd.amount);
+      case 'pdDeal': return PD.deal(S);
+      case 'pdReopen': return PD.reopen(S);
+      case 'pdSettle': return PD.settle(S, cmd.results);
+      case 'pdBanker': return PD.setBanker(S, cmd.pid);
+      case 'pdNet': return PD.setNet(S, cmd.pid, cmd.v);
       case 'award': return E.award(S, cmd.winners);
       case 'rebuy': return E.rebuy(S, cmd.pid);
       case 'stack': return E.setStack(S, cmd.pid, cmd.v, cmd.asBuyIn);
@@ -295,10 +307,13 @@
     const scrollY = window.scrollY;
     // a state broadcast can arrive while the player is typing a bet; keep their input
     ui.typingRaise = document.activeElement && document.activeElement.id === 'raiseInput';
-    $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : table()}</div>` + bottomBar(actor) + sheet();
+    const typingPd = document.activeElement && document.activeElement.id === 'pdBetInput';
+    $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : isPD() ? pdTable() : table()}</div>` + (isPD() ? pdBottom() : bottomBar(actor)) + sheet();
     window.scrollTo(0, scrollY);
     const ri = ui.typingRaise && document.getElementById('raiseInput');
     if (ri) { ri.focus(); syncRaise(true); }
+    const pi = typingPd && document.getElementById('pdBetInput');
+    if (pi) { pi.focus(); const n = pi.value.length; try { pi.setSelectionRange(n, n); } catch (e) { /* number inputs */ } }
     ui.typingRaise = false;
     updateTimer();
   }
@@ -324,7 +339,7 @@
       <div class="card">
         <h2>สร้างห้องใหม่</h2>
         <p class="muted small" style="margin:0 0 10px">มือถือเครื่องนี้จะเป็นเจ้ามือ (ต้องเปิดแอปค้างไว้ตลอดเกม)</p>
-        <div class="seg" id="mode"><button class="on" data-a="mode" data-v="cash">Cash game</button><button data-a="mode" data-v="tournament">Tournament</button></div>
+        <div class="seg" id="mode"><button class="on" data-a="mode" data-v="cash">Cash game</button><button data-a="mode" data-v="tournament">Tournament</button><button data-a="mode" data-v="pokdeng">ป๊อกเด้ง</button></div>
         <label class="check"><input type="checkbox" id="plays" checked> ฉันร่วมเล่นด้วย</label>
         <button class="${resume || roomParam ? '' : 'primary'}" style="width:100%;margin-top:8px" data-a="create">สร้างห้อง</button>
       </div>
@@ -391,16 +406,16 @@
     return `<div class="topbar"><div class="in">
       ${statusDot()}
       <span class="code" data-a="sheet" data-v="invite">${esc(code)}</span>
-      <span class="blinds">${tour ? `Lv${S.level + 1} · ` : ''}${fmt(b.sb)}/${fmt(b.bb)}${b.ante ? ` · ante ${fmt(b.ante)}` : ''}</span>
+      <span class="blinds">${isPD() ? `ป๊อกเด้ง${S.pd ? ` · รอบ ${S.pd.round.no}` : ''}` : `${tour ? `Lv${S.level + 1} · ` : ''}${fmt(b.sb)}/${fmt(b.bb)}${b.ante ? ` · ante ${fmt(b.ante)}` : ''}`}</span>
       ${tour || S.settings.sessionMin > 0 ? `<span class="timer ${S.pausedAt != null ? 'paused' : ''}" id="timer"></span>` : ''}
       <span class="spacer"></span>
-      ${isHost() ? `<button class="sm" data-a="sheet" data-v="menu">☰ เจ้ามือ</button>` : `<button class="sm ghost" data-a="sheet" data-v="menu">☰</button>`}
+      ${isHost() ? `<button class="sm" data-a="sheet" data-v="menu">☰ ${hostWord()}</button>` : `<button class="sm ghost" data-a="sheet" data-v="menu">☰</button>`}
     </div></div>`;
   }
 
   function lobby() {
     const list = S.players.map((p, i) => `<div class="pl"><span class="muted">${i + 1}</span><div class="nm"><b>${esc(p.name)}${p.id === myId ? ' <span class="me-tag">(คุณ)</span>' : ''}</b></div>
-      <span class="dot ${isOnline(p.id) ? 'on' : ''}"></span><div class="stack">${fmt(p.stack)}</div></div>`).join('');
+      <span class="dot ${isOnline(p.id) ? 'on' : ''}"></span><div class="stack">${isPD() ? (S.pd && S.pd.bankerId === p.id ? '🏦' : '') : fmt(p.stack)}</div></div>`).join('');
     return `<div class="card center">
       <div class="muted small">สแกนเพื่อเข้าห้อง</div>
       <div class="qr">${qrSvg(joinUrl())}</div>
@@ -408,11 +423,11 @@
       <div class="link">${esc(joinUrl())}</div>
     </div>
     <div class="card">
-      <h2>ผู้เล่น (${S.players.length}) · ${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ชิปเริ่ม ${fmt(S.settings.startStack)}</h2>
+      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ชิปเริ่ม ${fmt(S.settings.startStack)}`}</h2>
       <div class="players">${list || '<p class="muted">ยังไม่มีผู้เล่น</p>'}</div>
-      ${isHost() ? `<p class="muted small">เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)</p>
+      ${isHost() ? `<p class="muted small">${isPD() ? 'คนแรกในรายการเป็นเจ้ามือป๊อกเด้ง (🏦) เปลี่ยนได้ทีหลัง' : 'เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)'}</p>
         <div class="grid2"><button data-a="sheet" data-v="settings">ตั้งค่า</button><button class="primary" data-a="cmd" data-c="start" ${S.players.length < 2 ? 'disabled' : ''}>เริ่มเกม</button></div>`
-        : '<p class="muted center">รอเจ้ามือเริ่มเกม…</p>'}
+        : `<p class="muted center">รอ${hostWord()}เริ่มเกม…</p>`}
     </div>`;
   }
 
@@ -433,15 +448,16 @@
   function hostLostBanner() {
     if (isHost() || hostLostAt == null) return '';
     const secs = Math.floor((Date.now() - hostLostAt) / 1000);
-    const hostName = (pById(S.hostId) || {}).name || 'เจ้ามือ';
+    const hw = hostWord();
+    const hostName = (pById(S.hostId) || {}).name || hw;
     const backup = takeoverBackup();
     let body;
-    if (secs < TAKEOVER_BACKUP_S) body = `<span>⚠️ ติดต่อเจ้ามือ (${esc(hostName)}) ไม่ได้ · ${secs} วิ — กำลังลองใหม่…</span>`;
+    if (secs < TAKEOVER_BACKUP_S) body = `<span>⚠️ ติดต่อ${hw} (${esc(hostName)}) ไม่ได้ · ${secs} วิ — กำลังลองใหม่…</span>`;
     else if (!backup || backup.id === myId || secs >= TAKEOVER_ANY_S) {
-      body = `<span>⚠️ เจ้ามือ (${esc(hostName)}) หลุดไป ${secs} วิ — เล่นต่อจากเครื่องคุณได้</span>
-        <button class="primary" style="flex:none" data-a="takeover">👑 รับเป็นเจ้ามือแทน</button>`;
+      body = `<span>⚠️ ${hw} (${esc(hostName)}) หลุดไป ${secs} วิ — เล่นต่อจากเครื่องคุณได้</span>
+        <button class="primary" style="flex:none" data-a="takeover">👑 รับเป็น${hw}แทน</button>`;
     } else {
-      body = `<span>⚠️ เจ้ามือหลุดไป ${secs} วิ · รอ <b>${esc(backup.name)}</b> กด "รับเป็นเจ้ามือแทน" (อีก ${TAKEOVER_ANY_S - secs} วิ ทุกคนกดได้)</span>`;
+      body = `<span>⚠️ ${hw}หลุดไป ${secs} วิ · รอ <b>${esc(backup.name)}</b> กด "รับเป็น${hw}แทน" (อีก ${TAKEOVER_ANY_S - secs} วิ ทุกคนกดได้)</span>`;
     }
     return `<div class="banner row hostlost">${body}</div>`;
   }
@@ -585,10 +601,204 @@
     </div></div>`;
   }
 
+  // ---------- Pok Deng ----------
+  const PD = window.PokDeng;
+  function isPD() { return !!S && S.settings.mode === 'pokdeng'; }
+  // in Pok Deng "เจ้ามือ" means the banker, so the phone that runs the room gets another name
+  function hostWord() { return isPD() ? 'คนคุมห้อง' : 'เจ้ามือ'; }
+  function signedFmt(n) { return `${n > 0 ? '+' : ''}${fmt(n)}`; }
+  const toneOf = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
+  const canRunRound = () => isHost() || (S.pd && S.pd.bankerId === myId);
+  const RES_LABEL = { win: 'ชนะ', lose: 'แพ้', tie: 'เสมอ' };
+
+  function pdTable() {
+    const pd = S.pd; const r = pd.round;
+    const banker = pById(pd.bankerId);
+    const bettors = Object.keys(r.bets);
+    const total = bettors.reduce((a, id) => a + r.bets[id], 0);
+    const last = pd.rounds[pd.rounds.length - 1];
+    if (ui.pdRound !== r.no + r.phase) { ui.pdRound = r.no + r.phase; ui.pdRes = {}; }
+    const lastHtml = last ? `<div class="sidepots">รอบที่ ${last.no}: ${Object.entries(last.delta).filter(([, d]) => d)
+      .map(([id, d]) => `${esc(last.names[id])} <span class="${toneOf(d)}">${signedFmt(d)}</span>`).join(' · ') || 'เสมอทั้งวง'}</div>` : '';
+    const me = pById(myId);
+    const away = S.players.filter((p) => p.left);
+    const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากวงแล้ว · ยอด ${signedFmt(me.net || 0)}</span>
+      <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
+    return `${standBanner}<div class="card pot">
+        <div class="lbl">ป๊อกเด้ง · รอบที่ ${r.no}</div>
+        <div class="amt">${r.phase === 'bet' ? 'วางเดิมพัน' : 'เปิดไพ่'}</div>
+        <div class="hint">🏦 เจ้ามือ: ${esc(banker ? banker.name : '-')} · ลง ${bettors.length} คน รวม ${fmt(total)} บาท</div>
+        ${lastHtml}
+      </div>${pdHostTools()}
+      <div class="players">${S.players.filter((p) => !p.left).map(pdRow).join('')}</div>
+      ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b class="${toneOf(p.net || 0)}">${signedFmt(p.net || 0)}</b>`).join(' · ')}</div>` : ''}
+      ${r.phase === 'result' ? (canRunRound() ? pdResultPanel() : '<div class="card center muted">เปิดไพ่ — รอเจ้ามือบันทึกผล…</div>') : ''}
+      <div class="lastlog" data-a="sheet" data-v="hands">${S.log.slice(-2).map(esc).join('<br>')}<br><u>ประวัติแต่ละรอบ</u></div>`;
+  }
+
+  function pdHostTools() {
+    if (!isHost()) return '';
+    return `<div class="hosttools">
+      <button data-a="cmd" data-c="undo" ${hist.length ? '' : 'disabled'}>↩️<span>Undo</span></button>
+      <button data-a="sheet" data-v="players">👥<span>ผู้เล่น/ยอด</span></button>
+      <button data-a="sheet" data-v="pdBanker" ${S.pd.round.phase === 'bet' ? '' : 'disabled'}>🏦<span>เปลี่ยนเจ้ามือ</span></button>
+      <button data-a="sheet" data-v="summary">📊<span>สรุป</span></button>
+    </div>`;
+  }
+
+  function pdRow(p) {
+    const pd = S.pd; const r = pd.round;
+    const isBanker = p.id === pd.bankerId;
+    const bet = r.bets[p.id];
+    let status = isBanker ? 'เจ้ามือ' : p.sitOut ? 'พัก' : bet ? '' : 'ไม่ลงตานี้';
+    let cls = 'pl' + (isBanker ? ' banker' : '') + (!isBanker && (p.sitOut || !bet) ? ' idle' : '');
+    const editable = canRunRound() && r.phase === 'bet' && !isBanker && !p.sitOut;
+    return `<div class="${cls}" ${editable ? `data-a="pdBetFor" data-pid="${esc(p.id)}"` : ''}>
+      <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
+      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="คนคุมห้อง">👑</span>' : ''}${isBanker ? ' <span class="badge bank">🏦 เจ้ามือ</span>' : ''}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b>
+        <span class="st">${bet ? `<span class="bet">ลง ${fmt(bet)}</span>` : esc(status)}${editable ? ' <u class="small">แก้</u>' : ''}</span></div>
+      <div class="stack ${toneOf(p.net || 0)}">${signedFmt(p.net || 0)}</div>
+    </div>`;
+  }
+
+  function pdResultPanel() {
+    const r = S.pd.round;
+    const rows = Object.keys(r.bets).map((id) => {
+      const p = pById(id); const x = ui.pdRes[id] || {}; const m = x.m || 1;
+      const d = x.r === 'win' ? r.bets[id] * m : x.r === 'lose' ? -r.bets[id] * m : 0;
+      const rb = (k) => `<button class="${x.r === k ? 'on ' + k : ''}" data-a="pdRes" data-pid="${esc(id)}" data-r="${k}">${RES_LABEL[k]}</button>`;
+      const mb = PD.MULTS.map((k) => `<button class="${x.r && x.r !== 'tie' && m === k ? 'on' : ''}" data-a="pdRes" data-pid="${esc(id)}" data-m="${k}" ${x.r === 'tie' ? 'disabled' : ''}>×${k}</button>`).join('');
+      return `<div class="pdres"><div class="top"><b>${esc(p ? p.name : '?')}</b><span class="muted small">ลง ${fmt(r.bets[id])}</span>
+        <span class="${toneOf(d)}">${x.r ? signedFmt(d) : ''}</span></div>
+        <div class="seg rseg">${rb('lose')}${rb('tie')}${rb('win')}</div><div class="seg mseg">${mb}</div></div>`;
+    }).join('');
+    const ready = Object.keys(r.bets).every((id) => ui.pdRes[id] && ui.pdRes[id].r);
+    const bank = Object.keys(r.bets).reduce((a, id) => {
+      const x = ui.pdRes[id]; if (!x || !x.r || x.r === 'tie') return a;
+      return a - (x.r === 'win' ? 1 : -1) * r.bets[id] * (x.m || 1);
+    }, 0);
+    return `<div class="card"><h2>บันทึกผล (เทียบกับเจ้ามือ)</h2>
+      <div class="row small muted" style="margin-bottom:6px"><span style="flex:none">ทั้งวง:</span>
+        <button class="sm" data-a="pdAll" data-r="lose">แพ้หมด</button><button class="sm" data-a="pdAll" data-r="win">ชนะหมด</button></div>
+      ${rows}
+      <div class="pdbank">🏦 เจ้ามือรอบนี้ <b class="${toneOf(bank)}">${signedFmt(bank)}</b></div>
+      <p class="muted small" style="margin:4px 0 8px">×2 = สองเด้ง/ป๊อกเด้ง · ×3 = สามเด้ง/เซียน/เรียง · ×5 = ตอง (ใช้ตัวคูณของมือที่ชนะ)</p>
+      <button class="primary" style="width:100%" data-a="pdSettle" ${ready ? '' : 'disabled'}>ยืนยันผลรอบนี้</button></div>`;
+  }
+
+  function pdBottom() {
+    if (S.handNo === 0) return '';
+    const pd = S.pd; const r = pd.round; const me = pById(myId);
+    const bettor = me && me.id !== pd.bankerId && !me.left && !me.sitOut;
+    let inner = '';
+    if (r.phase === 'bet') {
+      const n = Object.keys(r.bets).length;
+      const dealBtn = canRunRound() ? `<button class="primary" style="width:100%;padding:14px;margin-top:${bettor ? 8 : 0}px" data-a="cmd" data-c="pdDeal" ${n ? '' : 'disabled'}>ปิดรับเดิมพัน · แจกไพ่ ▶ (${n} คน)</button>` : '';
+      if (bettor) {
+        const base = S.settings.defaultBet || 10;
+        const cur = r.bets[myId] || 0;
+        const draft = ui.pdDraft != null ? ui.pdDraft : String(cur || base);
+        const quick = [base, base * 2, base * 5, base * 10].map((v) => `<button data-a="pdQuick" data-v="${v}">${fmt(v)}</button>`).join('');
+        inner = `<div class="who"><span>${cur ? `ลงไว้ <b>${fmt(cur)}</b> บาท` : '<b>วางเดิมพันรอบนี้</b>'}</span><span>ยอดคุณ <span class="${toneOf(me.net || 0)}">${signedFmt(me.net || 0)}</span></span></div>
+          <div class="row"><input id="pdBetInput" type="number" inputmode="numeric" enterkeyhint="done" min="0" value="${esc(draft)}" aria-label="เดิมพัน">
+            <button class="primary" style="flex:none" data-a="pdBetGo" id="pdBetGo">${cur ? 'แก้เป็น' : 'ลง'} ${fmt(Number(draft) || 0)}</button></div>
+          <div class="quick pdquick">${quick}<button class="ghost" data-a="pdSkip">ไม่ลง</button></div>${dealBtn}`;
+      } else if (dealBtn) inner = dealBtn;
+      else inner = `<div class="waitbar">${me && me.id === pd.bankerId ? 'คุณเป็นเจ้ามือ — รอทุกคนลงเดิมพัน' : 'รอผู้เล่นลงเดิมพัน…'}</div>`;
+    } else {
+      inner = canRunRound()
+        ? `<div class="row"><button class="ghost" style="flex:none" data-a="cmd" data-c="pdReopen">↩ แก้เดิมพัน</button><div class="waitbar">บันทึกผลด้านบน แล้วกดยืนยัน</div></div>`
+        : `<div class="waitbar">เปิดไพ่! ${r.bets[myId] ? `คุณลง <b>${fmt(r.bets[myId])}</b> · ` : ''}รอเจ้ามือบันทึกผล</div>`;
+    }
+    return `<div class="actbar"><div class="in">${inner}</div></div>`;
+  }
+
+  function syncPdBet() {
+    const g = document.getElementById('pdBetGo');
+    if (g) g.textContent = g.textContent.replace(/[\d,]*$/, fmt(Number(ui.pdDraft) || 0));
+  }
+
+  function pdMenuSheet(me) {
+    if (!isHost()) {
+      return ['เมนู', `<div class="menu">
+        <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
+        <button data-a="sheet" data-v="summary">📊 สรุปยอด</button>
+        <button data-a="sheet" data-v="hands">🎴 ประวัติแต่ละรอบ</button>
+        ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พัก (ไม่ลงเดิมพันชั่วคราว)'}</button>`}
+        <button data-a="rename">✏️ เปลี่ยนชื่อ</button>` : ''}
+        <button class="ghost" data-a="leave">ออกจากห้อง</button></div>`];
+    }
+    return ['เมนูคนคุมห้อง', `<div class="menu">
+      <button data-a="cmd" data-c="undo">↩️ Undo (ย้อน 1 ขั้น)</button>
+      <button data-a="sheet" data-v="players">👥 ผู้เล่น · ยอด · ลำดับ</button>
+      <button data-a="sheet" data-v="pdBanker">🏦 เปลี่ยนเจ้ามือป๊อกเด้ง</button>
+      <button data-a="sheet" data-v="settings">⚙️ ตั้งค่า (เดิมพันตั้งต้น)</button>
+      <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
+      <button data-a="sheet" data-v="handoff">👑 ส่งต่อการคุมห้องให้คนอื่น</button>
+      <button data-a="sheet" data-v="summary">📊 สรุปยอด / ใครโอนให้ใคร</button>
+      <button data-a="sheet" data-v="hands">🎴 ประวัติแต่ละรอบ</button>
+      ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ร่วมเล่นด้วย</button>`}
+      <button data-a="goHome">🏠 กลับหน้าแรก (เก็บห้องไว้)</button>
+      <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
+    </div>`];
+  }
+
+  function pdBankerSheet() {
+    const rows = S.players.filter((p) => !p.left).map((p) => `<button data-a="pdBanker" data-pid="${esc(p.id)}" ${p.id === S.pd.bankerId ? 'disabled' : ''}>
+      ${p.id === S.pd.bankerId ? '🏦 ' : ''}${esc(p.name)}${p.id === S.pd.bankerId ? ' (เจ้ามืออยู่)' : ''}</button>`).join('');
+    return ['เปลี่ยนเจ้ามือป๊อกเด้ง', `<p class="muted small" style="margin-top:0">เปลี่ยนได้ตอนรับเดิมพัน · เดิมพันของคนที่มาเป็นเจ้ามือจะถูกยกเลิก</p><div class="menu">${rows}</div>`];
+  }
+
+  function pdPlayersSheet() {
+    const rows = S.players.map((p, i) => `<div class="prow"><div class="top"><b>${i + 1}. ${esc(p.name)}${p.id === myId ? ' (คุณ)' : ''}${p.id === S.pd.bankerId ? ' 🏦' : ''}${p.left ? ' <span class="muted small">· ลุกแล้ว</span>' : ''}</b>
+        <span class="${toneOf(p.net || 0)}">${signedFmt(p.net || 0)}</span></div>
+      <div class="acts">
+        <button class="sm" data-a="cmd" data-c="move" data-pid="${esc(p.id)}" data-d="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="sm" data-a="cmd" data-c="move" data-pid="${esc(p.id)}" data-d="1" ${i === S.players.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="sm" data-a="pdNet" data-pid="${esc(p.id)}">แก้ยอด</button>
+        <button class="sm" data-a="cmd" data-c="sitout" data-pid="${esc(p.id)}" data-v="${p.sitOut ? '' : '1'}" ${p.left ? 'disabled' : ''}>${p.sitOut ? 'กลับมาเล่น' : 'พัก'}</button>
+        ${p.left ? `<button class="sm primary" data-a="cmd" data-c="stand" data-pid="${esc(p.id)}" data-v="">นั่งกลับ</button>`
+          : `<button class="sm" data-a="stand" data-pid="${esc(p.id)}">ลุก</button>`}
+        <button class="sm danger" data-a="remove" data-pid="${esc(p.id)}">ลบ</button>
+      </div></div>`).join('');
+    return ['ผู้เล่น', `<p class="muted small" style="margin-top:0">แก้ยอด = ปรับยอดได้/เสียสะสมด้วยมือ (เช่น จ่ายกันไปแล้วระหว่างเกม)</p>${rows}`];
+  }
+
+  function pdSummarySheet() {
+    const data = S.players.map((p) => ({ p, net: p.net || 0 })).sort((a, b) => b.net - a.net);
+    const rows = data.map(({ p, net }) => `<tr><td>${esc(p.name)}${p.left ? ' 🚪' : ''}${p.id === S.pd.bankerId ? ' 🏦' : ''}</td>
+      <td class="${toneOf(net)}"><b>${signedFmt(net)}</b> บาท</td></tr>`).join('');
+    const sum = data.reduce((a, x) => a + x.net, 0);
+    const tx = settle(data.map(({ p, net }) => ({ name: p.name, amt: net })));
+    const txHtml = tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${fmt(t.amt)} บาท</b></div>`).join('')
+      : '<p class="muted small">ยังไม่มีใครได้หรือเสีย</p>';
+    return ['สรุปยอดป๊อกเด้ง', `<p class="muted small" style="margin-top:0">เล่นไป ${S.pd.rounds.length} รอบ</p>
+      <table class="summary"><tr><th>ผู้เล่น</th><th>ได้/เสีย</th></tr>${rows}
+      <tr class="total"><td>รวม</td><td>${sum === 0 ? '✓ ลงตัว' : signedFmt(sum)}</td></tr></table>
+      <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${txHtml}
+      ${sum ? '<p class="muted small">* ยอดรวมไม่เป็นศูนย์ เพราะมีการแก้ยอดด้วยมือ</p>' : ''}`];
+  }
+
+  function pdRoundsSheet() {
+    const rs = S.pd.rounds.slice().reverse();
+    const items = rs.map((r, i) => {
+      const nm = (id) => esc(r.names[id] || (pById(id) || {}).name || '?');
+      const lines = Object.keys(r.bets).map((id) => {
+        const x = r.results[id];
+        return `<span>${nm(id)} ลง ${fmt(r.bets[id])} · ${RES_LABEL[x.r]}${x.r !== 'tie' && x.m > 1 ? ` ×${x.m}` : ''} <b class="${toneOf(r.delta[id])}">${signedFmt(r.delta[id])}</b></span>`;
+      }).join('');
+      const mine = r.delta[myId] != null ? ` · คุณ <span class="${toneOf(r.delta[myId])}">${signedFmt(r.delta[myId])}</span>` : '';
+      return `<details class="hand" ${i === 0 ? 'open' : ''}><summary><b>รอบที่ ${r.no}</b> · 🏦 ${nm(r.bankerId)} <span class="${toneOf(r.delta[r.bankerId])}">${signedFmt(r.delta[r.bankerId])}</span>${mine}</summary>
+        <div class="hdelta pdlines">${lines}</div></details>`;
+    }).join('');
+    return ['ประวัติแต่ละรอบ', `${items || '<p class="muted">ยังไม่มีรอบที่จบ</p>'}
+      <p class="center small" style="margin-top:12px"><u data-a="sheet" data-v="log">ดูบันทึกเหตุการณ์ทั้งหมด</u> <span class="muted">· เก็บ 50 รอบล่าสุด</span></p>`];
+  }
+
   // ---------- sheets ----------
   function sheet() {
     if (!ui.sheet) return '';
-    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet }[ui.sheet];
+    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet }[ui.sheet];
     if (!body) return '';
     const [title, html] = body();
     return `<div class="sheet-bg" data-a="closeSheet"><div class="sheet" data-stop="1">
@@ -598,6 +808,7 @@
   function menuSheet() {
     const tour = S.settings.mode === 'tournament';
     const me = pById(myId);
+    if (isPD()) return pdMenuSheet(me);
     if (!isHost()) {
       return ['เมนู', `<div class="menu">
         <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
@@ -628,11 +839,16 @@
     const cands = S.players.filter((p) => p.id !== myId);
     const rows = cands.map((p) => `<button data-a="handoff" data-id="${esc(p.id)}" ${online.has(p.id) ? '' : 'disabled'}>
       <span class="dot ${online.has(p.id) ? 'on' : 'off'}"></span> ${esc(p.name)}${online.has(p.id) ? '' : ' (ออฟไลน์)'}</button>`).join('');
-    return ['เปลี่ยนเจ้ามือ', `<p class="muted small" style="margin-top:0">มือถือของคนที่เลือกจะเป็นเครื่องหลักแทน (ข้อมูลเกมย้ายไปทั้งหมด เล่นต่อจากเดิมได้เลย) เครื่องนี้จะกลายเป็นผู้เล่นธรรมดา ทุกคนอยู่ห้อง ${esc(code)} เดิม</p>
+    return [`เปลี่ยน${hostWord()}`, `<p class="muted small" style="margin-top:0">มือถือของคนที่เลือกจะเป็นเครื่องหลักแทน (ข้อมูลเกมย้ายไปทั้งหมด เล่นต่อจากเดิมได้เลย) เครื่องนี้จะกลายเป็นผู้เล่นธรรมดา ทุกคนอยู่ห้อง ${esc(code)} เดิม</p>
       <div class="menu">${rows || '<p class="muted">ยังไม่มีผู้เล่นคนอื่น</p>'}</div>`];
   }
 
   function standButton(me) {
+    if (isPD()) {
+      return me.left
+        ? `<button class="primary" data-a="cmd" data-c="stand" data-pid="${esc(me.id)}" data-v="">🪑 นั่งกลับ</button>`
+        : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากวง (ยอด ${signedFmt(me.net || 0)})</button>`;
+    }
     return me.left
       ? `<button class="primary" data-a="cmd" data-c="stand" data-pid="${esc(me.id)}" data-v="">🪑 นั่งกลับ (ชิป ${fmt(me.stack)})</button>`
       : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากโต๊ะ (เก็บชิป ${fmt(me.stack)})</button>`;
@@ -646,6 +862,12 @@
 
   function settingsSheet() {
     const st = S.settings;
+    if (isPD()) {
+      return ['ตั้งค่าป๊อกเด้ง', `
+        <label>เดิมพันตั้งต้น (บาท)</label><input id="s_pdbet" type="number" inputmode="numeric" value="${st.defaultBet || 10}">
+        <p class="muted small">ใช้เป็นยอดเริ่มต้นตอนผู้เล่นวางเดิมพัน และเป็นฐานของปุ่มลัด (×1 ×2 ×5 ×10)</p>
+        <button class="primary" style="width:100%;margin-top:14px" data-a="saveSettings">บันทึก</button>`];
+    }
     const locked = S.handNo > 0;
     const levels = st.levels.map((l, i) => levelRow(l, i, st.mode === 'tournament' && S.levelStart != null && i === S.level)).join('');
     return ['ตั้งค่า', `
@@ -698,6 +920,7 @@
   }
 
   function playersSheet() {
+    if (isPD()) return pdPlayersSheet();
     const rows = S.players.map((p, i) => {
       const busy = E.inHand(S, p.id);
       return `<div class="prow"><div class="top"><b>${i + 1}. ${esc(p.name)}${p.id === myId ? ' (คุณ)' : ''}${p.left ? ' <span class="muted small">· ลุกแล้ว</span>' : ''}</b><span>${fmt(p.stack)} <span class="muted small">· buy-in ${p.buyIns}</span></span></div>
@@ -733,6 +956,7 @@
 
   function summarySheet() {
     const st = S.settings;
+    if (isPD()) return pdSummarySheet();
     if (st.mode === 'tournament') {
       const alive = S.players.filter((p) => !p.out).sort((a, b) => b.stack - a.stack);
       const outs = S.finishOrder.slice().reverse().map(pById).filter(Boolean);
@@ -776,6 +1000,7 @@
   }
 
   function handsSheet() {
+    if (isPD()) return pdRoundsSheet();
     const hs = (S.history || []).slice().reverse();
     const signed = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : 'muted'}">${n > 0 ? '+' : ''}${fmt(n)}</span>`;
     const items = hs.map((h, i) => {
@@ -847,6 +1072,7 @@
     if (e.target.id === 'raiseRange') { ui.raiseTo = Number(e.target.value); syncRaise(); }
     if (e.target.id === 'raiseInput') { ui.raiseTo = Math.floor(Number(e.target.value) || 0); syncRaise(true); }
     if (e.target.id === 's_session') markSessionSeg();
+    if (e.target.id === 'pdBetInput') { ui.pdDraft = e.target.value; syncPdBet(); }
     const k = e.target.dataset && e.target.dataset.k;
     if (k === 'sb') e.target.dataset.manual = '1';
     if (k === 'bb') {
@@ -900,6 +1126,7 @@
         if (!readName()) return;
         const g = E.newGame({ mode: createMode });
         if (document.getElementById('plays').checked) E.addPlayer(g, myId, myName);
+        if (createMode === 'pokdeng') PD.init(g);
         startHost(Net.randomCode(), g, [], false);
         ui.sheet = 'settings'; render();
         break;
@@ -1005,9 +1232,44 @@
       case 'stand': {
         const p = pById(d.pid);
         const who = p.id === myId ? 'คุณ' : p.name;
-        if (confirm(`${who}จะลุกจากโต๊ะพร้อมชิป ${fmt(p.stack)}?\nไม่ถูกแจกไพ่จนกว่าจะกด "นั่งกลับ"`)) { ui.sheet = null; send({ c: 'stand', pid: d.pid, v: true }); }
+        const msg = isPD() ? `${who}จะลุกจากวง? (ยอด ${signedFmt(p.net || 0)} ยังเก็บไว้ในสรุป)` : `${who}จะลุกจากโต๊ะพร้อมชิป ${fmt(p.stack)}?\nไม่ถูกแจกไพ่จนกว่าจะกด "นั่งกลับ"`;
+        if (confirm(msg)) { ui.sheet = null; send({ c: 'stand', pid: d.pid, v: true }); }
         break;
       }
+      case 'pdQuick': ui.pdDraft = d.v; { const i = document.getElementById('pdBetInput'); if (i) i.value = d.v; } syncPdBet(); break;
+      case 'pdBetGo': {
+        const v = Math.floor(Number(ui.pdDraft != null ? ui.pdDraft : document.getElementById('pdBetInput').value) || 0);
+        ui.pdDraft = null;
+        send({ c: 'pdBet', pid: myId, amount: v });
+        break;
+      }
+      case 'pdSkip': ui.pdDraft = null; send({ c: 'pdBet', pid: myId, amount: 0 }); break;
+      case 'pdBetFor': {
+        const p = pById(d.pid);
+        const v = prompt(`เดิมพันของ ${p.name} (0 = ไม่ลง)`, (S.pd.round.bets[p.id] || S.settings.defaultBet || 10));
+        if (v != null && v !== '') send({ c: 'pdBet', pid: d.pid, amount: Number(v) });
+        break;
+      }
+      case 'pdRes': {
+        const cur = ui.pdRes[d.pid] || { m: 1 };
+        if (d.r) cur.r = d.r;
+        if (d.m) { cur.m = Number(d.m); if (!cur.r || cur.r === 'tie') cur.r = cur.r || 'win'; }
+        ui.pdRes[d.pid] = cur; render();
+        break;
+      }
+      case 'pdAll':
+        Object.keys(S.pd.round.bets).forEach((id) => { ui.pdRes[id] = { r: d.r, m: (ui.pdRes[id] && ui.pdRes[id].m) || 1 }; });
+        render(); break;
+      case 'pdSettle': send({ c: 'pdSettle', results: ui.pdRes }); break;
+      case 'pdNet': {
+        const p = pById(d.pid);
+        const v = prompt(`ยอดได้/เสียของ ${p.name} (ติดลบ = เสีย)`, p.net || 0);
+        if (v != null && v !== '' && !isNaN(Number(v))) send({ c: 'pdNet', pid: d.pid, v: Number(v) });
+        break;
+      }
+      case 'pdBanker':
+        if (confirm(`ให้ ${pById(d.pid).name} เป็นเจ้ามือป๊อกเด้ง?`)) { ui.sheet = null; send({ c: 'pdBanker', pid: d.pid }); }
+        break;
       case 'handoff': {
         const p = pById(d.id);
         if (handoffTimer) return toast('กำลังส่งต่ออยู่…');
@@ -1061,6 +1323,10 @@
 
   function saveSettings() {
     const num = (id) => Math.max(0, Math.floor(Number(document.getElementById(id).value) || 0));
+    if (isPD()) {
+      send({ c: 'settings', settings: { defaultBet: num('s_pdbet') || 10 } });
+      ui.sheet = null; return render();
+    }
     const mode = document.getElementById('s_mode').value;
     const settings = { mode, startStack: num('s_stack') || 1000 };
     if (mode === 'cash') {
