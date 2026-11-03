@@ -46,7 +46,7 @@
   function addPlayer(s, id, name) {
     if (s.players.some((p) => p.id === id)) return;
     const late = s.settings.mode === 'tournament' && s.handNo > 0;
-    s.players.push({ id, name, stack: s.settings.startStack, buyIns: 1, sitOut: false, out: false });
+    s.players.push({ id, name, stack: s.settings.startStack, buyIns: 1, bought: s.settings.startStack, sitOut: false, out: false });
     addLog(s, `${name} เข้าร่วม${late ? ' (late entry)' : ''}`);
   }
 
@@ -356,10 +356,16 @@
     return s.settings.sessionMin * 60000 - (t - s.levelStart);
   }
 
+  // Chips a player has paid for in total (games saved before `bought` existed fall back to buy-in count).
+  function invested(s, p) {
+    return p.bought != null ? p.bought : p.buyIns * s.settings.startStack + (p.extraBuyIn || 0);
+  }
+
   // ---- off-hand admin ----
   function rebuy(s, id) {
     if (inHand(s, id)) fail('Rebuy ได้หลังจบมือ');
     const p = player(s, id);
+    p.bought = invested(s, p) + s.settings.startStack;
     p.stack += s.settings.startStack;
     p.buyIns++;
     p.out = false;
@@ -373,7 +379,7 @@
     if (inHand(s, id)) fail('แก้ชิปได้หลังจบมือ');
     const p = player(s, id);
     stack = Math.max(0, Math.floor(Number(stack) || 0));
-    if (asBuyIn) p.extraBuyIn = (p.extraBuyIn || 0) + stack - p.stack;
+    if (asBuyIn) p.bought = invested(s, p) + stack - p.stack;
     addLog(s, `${p.name} ชิป ${p.stack} → ${stack} (${asBuyIn ? 'ซื้อ/คืนชิป' : 'แก้โดยเจ้ามือ'})`);
     p.stack = stack;
     if (stack > 0) { p.out = false; s.finishOrder = s.finishOrder.filter((x) => x !== id); }
@@ -402,7 +408,7 @@
   const Engine = {
     STREETS, DEFAULT_LEVELS, newGame, addPlayer, removePlayer, movePlayer, startHand, act, award,
     rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, sessionRemainingMs, blinds, potTotal, computePots,
-    eligible, inHand, streetName,
+    eligible, inHand, streetName, invested,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
   else root.Engine = Engine;

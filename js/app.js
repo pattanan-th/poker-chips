@@ -201,7 +201,7 @@
       case 'settings': {
         const old = S.settings;
         S.settings = Object.assign({}, old, cmd.settings);
-        if (S.handNo === 0 && S.settings.startStack !== old.startStack) S.players.forEach((p) => { p.stack = S.settings.startStack; });
+        if (S.handNo === 0 && S.settings.startStack !== old.startStack) S.players.forEach((p) => { p.stack = p.bought = S.settings.startStack; });
         if (S.settings.mode !== old.mode && S.handNo === 0) { S.level = 0; S.levelStart = null; S.pausedAt = null; }
         // cash clock: changing the length mid-game restarts the countdown from now
         if (S.settings.mode === 'cash' && (S.settings.sessionMin || 0) !== (old.sessionMin || 0)) {
@@ -601,7 +601,7 @@
     if (!isHost()) {
       return ['เมนู', `<div class="menu">
         <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
-        <button data-a="sheet" data-v="summary">📊 สรุปชิป</button>
+        <button data-a="sheet" data-v="summary">📊 สรุปประจำโต๊ะ</button>
         <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
         ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
         <button data-a="rename">✏️ เปลี่ยนชื่อ</button>` : ''}
@@ -740,20 +740,35 @@
       return ['อันดับ', `<table><tr><th>ผู้เล่น</th><th>ชิป</th></tr>${rows}</table>`];
     }
     const money = st.buyInValue > 0;
+    const baht = (chips) => Math.round(chips / st.startStack * st.buyInValue);
+    const signed = (n) => `${n > 0 ? '+' : ''}${fmt(n)}`;
+    const tone = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
     const data = S.players.map((p) => {
-      const net = p.stack - p.buyIns * st.startStack - (p.extraBuyIn || 0);
-      return { p, net, cash: net / st.startStack * st.buyInValue };
+      const inn = E.invested(S, p);
+      // money in/out are rounded separately so each row's profit is exactly out − in
+      return { p, inn, out: p.stack, net: p.stack - inn, cash: money ? baht(p.stack) - baht(inn) : 0 };
     }).sort((a, b) => b.net - a.net);
-    const rows = data.map(({ p, net, cash }) => `<tr><td>${esc(p.name)}${p.left ? ' <span class="muted small">(ลุก)</span>' : ''}</td><td>${p.buyIns}</td><td>${fmt(p.stack)}</td>
-      <td class="${net > 0 ? 'pos' : net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</td>
-      ${money ? `<td class="${cash > 0 ? 'pos' : cash < 0 ? 'neg' : ''}">${cash > 0 ? '+' : ''}${fmt(Math.round(cash))}</td>` : ''}</tr>`).join('');
-    const owed = data.map(({ p, net, cash }) => ({ name: p.name, amt: money ? Math.round(cash) : net }));
+    const cell = (chips, b) => `${fmt(chips)}${money ? `<div class="sub">${fmt(b)} บาท</div>` : ''}`;
+    const rows = data.map(({ p, inn, out, net, cash }) => `<tr>
+      <td>${esc(p.name)}${p.left ? ' 🚪' : ''}<div class="sub">ซื้อ ${p.buyIns} ครั้ง${p.left ? ' · ลุกแล้ว' : ''}</div></td>
+      <td>${cell(inn, baht(inn))}</td>
+      <td>${cell(out, baht(out))}</td>
+      <td class="${tone(net)}"><b>${signed(net)}</b>${money ? `<div class="sub ${tone(cash)}">${signed(cash)} บาท</div>` : ''}</td></tr>`).join('');
+    const tIn = data.reduce((a, x) => a + x.inn, 0);
+    const tOut = data.reduce((a, x) => a + x.out, 0);
+    const inPot = S.hand && !S.hand.done ? E.potTotal(S.hand) : 0;
+    const totals = `<tr class="total"><td>รวมทั้งโต๊ะ${inPot ? `<div class="sub">+ ใน pot ${fmt(inPot)}</div>` : ''}</td>
+      <td>${cell(tIn, data.reduce((a, x) => a + baht(x.inn), 0))}</td>
+      <td>${cell(tOut, data.reduce((a, x) => a + baht(x.out), 0))}</td>
+      <td class="${tone(tOut + inPot - tIn)}">${tOut + inPot === tIn ? '✓ ลงตัว' : signed(tOut + inPot - tIn)}</td></tr>`;
+    const owed = data.map(({ p, net, cash }) => ({ name: p.name, amt: money ? cash : net }));
     const unit = money ? 'บาท' : 'ชิป';
     const tx = settle(owed);
     const off = owed.reduce((a, o) => a + o.amt, 0);
     const txHtml = tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${fmt(t.amt)} ${unit}</b></div>`).join('')
       : `<p class="muted small">${owed.some((o) => o.amt) ? 'คำนวณการโอนไม่ได้ เพราะยอดรวมไม่ลงตัว (ดูหมายเหตุด้านล่าง)' : 'ยังไม่มีใครได้หรือเสีย'}</p>`;
-    return ['สรุปชิป', `<table><tr><th>ผู้เล่น</th><th>Buy-in</th><th>ชิป</th><th>กำไร</th>${money ? '<th>บาท</th>' : ''}</tr>${rows}</table>
+    return ['สรุปประจำโต๊ะ', `<table class="summary"><tr><th>ผู้เล่น</th><th>เข้า</th><th>ออก</th><th>กำไร/ขาดทุน</th></tr>${rows}${totals}</table>
+      <p class="muted small" style="margin:6px 0 0">เข้า = ชิปที่ซื้อทั้งหมด (รวม Rebuy) · ออก = ชิปที่ถืออยู่ตอนนี้ หรือตอนลุกจากโต๊ะ</p>
       <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${txHtml}
       ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${fmt(off)} ${unit} (ชิปบนโต๊ะไม่ตรงกับยอด buy-in เช่น มีการแก้ชิป${money ? ' หรือปัดเศษ' : ''})</p>` : ''}
       ${S.hand && !S.hand.done ? '<p class="muted small">* มือนี้ยังไม่จบ ชิปที่อยู่ใน pot ยังไม่ถูกนับ</p>' : ''}

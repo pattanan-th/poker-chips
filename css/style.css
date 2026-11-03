@@ -187,3 +187,9 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .room .rinfo b { letter-spacing: 2px; font-size: 17px; }
 .room .rstat { font-size: 13px; color: var(--muted); margin-left: 6px; }
 .room button { flex: none; }
+
+/* table summary */
+table.summary td { vertical-align: top; }
+table.summary .sub { font-size: 12px; color: var(--muted); font-weight: 400; }
+table.summary .sub.pos { color: var(--green); } table.summary .sub.neg { color: var(--red); }
+table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0; font-weight: 700; }

@@ -238,8 +238,11 @@ test('setStack as buy-in tracks extra investment; as correction does not', () =>
   const s = game([1000, 1000]);
   E.setStack(s, 'p0', 300, true);
   E.setStack(s, 'p1', 1200, false);
-  assert.strictEqual(s.players[0].extraBuyIn, -700);
-  assert.strictEqual(s.players[1].extraBuyIn, undefined);
+  assert.strictEqual(E.invested(s, s.players[0]), 300);
+  assert.strictEqual(E.invested(s, s.players[1]), 1000);
+  s.players[0].stack = 0;
+  E.rebuy(s, 'p0');
+  assert.strictEqual(E.invested(s, s.players[0]), 1300);
 });
 
 console.log(`\n${passed} passed`);
