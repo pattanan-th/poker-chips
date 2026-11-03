@@ -113,6 +113,35 @@
 
   const bestFor = (hole, board, game) => (game === 'plo' ? bestOmaha(hole, board) : best(hole.concat(board)));
 
+  // Chance (0..1) that `hole` wins against `opps` unknown hands, by dealing out the unseen cards
+  // at random `iters` times. A split counts as a share of the pot.
+  function equity(hole, board, opps, game, iters) {
+    const seen = new Set(hole.concat(board));
+    const unseen = [];
+    for (let c = 0; c < 52; c++) if (!seen.has(c)) unseen.push(c);
+    const n = holeCount(game);
+    const need = opps * n + (5 - board.length);
+    if (opps < 1) return 1;
+    if (need > unseen.length) return null;
+    let won = 0;
+    for (let t = 0; t < iters; t++) {
+      // partial Fisher-Yates: only the cards we need
+      for (let i = 0; i < need; i++) {
+        const j = i + Math.floor(Math.random() * (unseen.length - i));
+        [unseen[i], unseen[j]] = [unseen[j], unseen[i]];
+      }
+      const full = board.concat(unseen.slice(opps * n, need));
+      const mine = bestFor(hole, full, game).score;
+      let tied = 1; let lost = false;
+      for (let o = 0; o < opps && !lost; o++) {
+        const d = compare(bestFor(unseen.slice(o * n, o * n + n), full, game).score, mine);
+        if (d > 0) lost = true; else if (d === 0) tied++;
+      }
+      if (!lost) won += 1 / tied;
+    }
+    return won / iters;
+  }
+
   // Bring the shared hand in line with the secret deal. Call on the host after every command.
   // secrets: { [handNo]: deal } kept by the host only. Returns true if it awarded the pot.
   function sync(s, secrets, E) {
@@ -158,7 +187,7 @@
     return awarded;
   }
 
-  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deal, score5, best, bestOmaha, bestFor, holeCount, maxPlayers, compare, sync };
+  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deal, score5, best, bestOmaha, bestFor, holeCount, maxPlayers, compare, equity, sync };
   if (typeof module !== 'undefined' && module.exports) module.exports = Cards;
   else root.Cards = Cards;
 })(this);

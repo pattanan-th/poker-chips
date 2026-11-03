@@ -578,16 +578,33 @@
     return `<div class="board">${slots}</div>`;
   }
 
+  // My chance to win against the other live hands, unseen (simulated off the main render).
+  function winChance(h, cards) {
+    const opps = h.ids.filter((id) => id !== myId && !h.folded[id]).length;
+    const board = h.board || [];
+    const key = [h.no, cards.join(), board.join(), opps].join('|');
+    if (ui.eq && ui.eq.key === key) return ui.eq.val;
+    ui.eq = { key, val: undefined };
+    setTimeout(() => {
+      if (!ui.eq || ui.eq.key !== key) return;
+      ui.eq.val = Cards.equity(cards, board, opps, h.game, h.game === 'plo' ? 800 : 1500);
+      render();
+    }, 30);
+    return undefined;
+  }
+
   function myCardsPanel() {
     const h = S.hand; const cards = myHole();
     if (!h || !cards) return '';
     const folded = h.folded[myId];
     const made = !folded && h.board && h.board.length >= 3 ? Cards.bestFor(cards, h.board, h.game) : null;
+    const eq = folded || h.done || h.street === 'showdown' ? null : winChance(h, cards);
+    const eqHtml = eq === null ? '' : `<br>โอกาสชนะ: <b class="gold">${eq === undefined ? '…' : `${Math.round(eq * 100)}%`}</b>`;
     if (ui.holeHidden) {
       return `<div class="card mycards hidden" data-a="holeHide"><span class="pcs">${cardHtml(null, 'lg')}${cardHtml(null, 'lg')}</span><span class="muted small">ไพ่ของคุณ · แตะเพื่อดู</span></div>`;
     }
     return `<div class="card mycards ${folded ? 'fold' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg')}
-      <span class="small"><b>ไพ่ของคุณ</b>${h.game === 'plo' ? ' <span class="muted">(ใช้ 2 ใบ + กลาง 3 ใบ)</span>' : ''}${folded ? ' · Fold แล้ว' : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
+      <span class="small"><b>ไพ่ของคุณ</b>${h.game === 'plo' ? ' <span class="muted">(ใช้ 2 ใบ + กลาง 3 ใบ)</span>' : ''}${folded ? ' · Fold แล้ว' : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}${eqHtml}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
   }
 
   function showdown() {
