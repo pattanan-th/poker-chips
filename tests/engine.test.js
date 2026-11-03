@@ -200,4 +200,38 @@ test('stand up: blocked mid-hand unless folded, skipped by next hand, sit back i
   assert.deepStrictEqual(s.hand.ids, ['p0', 'p1', 'p2']);
 });
 
+test('hand history: actions per street and chip deltas that sum to zero', () => {
+  const s = game([1000, 1000, 1000]);
+  E.startHand(s, 0);
+  E.act(s, 'p0', 'raise', 30); E.act(s, 'p1', 'fold'); E.act(s, 'p2', 'call');
+  E.act(s, 'p2', 'check'); E.act(s, 'p0', 'raise', 50); E.act(s, 'p2', 'fold');
+  const h = s.history[0];
+  assert.strictEqual(h.no, 1);
+  assert.deepStrictEqual(h.actions.map((a) => a.t), ['SB 5', 'BB 10', 'Raise to 30', 'Fold', 'Call 20', 'Check', 'Bet 50', 'Fold']);
+  assert.strictEqual(h.actions[5].st, 'flop');
+  assert.deepStrictEqual(h.delta, { p0: 35, p1: -5, p2: -30 });
+  assert.deepStrictEqual(h.pots, [{ amount: 65, winners: ['p0'] }]);
+});
+
+test('tournament: fixing a busted player\'s stack takes them off the finish list', () => {
+  const s = game([1000, 1000, 50], { mode: 'tournament' });
+  E.startHand(s, 0);
+  E.act(s, 'p0', 'allin'); E.act(s, 'p1', 'fold'); E.act(s, 'p2', 'allin');
+  E.award(s, [['p0']]);
+  E.setStack(s, 'p2', 500);
+  assert.deepStrictEqual(s.finishOrder, []);
+  assert.strictEqual(s.players[2].out, false);
+});
+
+test('cash session clock starts with the first hand and pauses', () => {
+  const s = game([1000, 1000], { sessionMin: 60 });
+  assert.strictEqual(E.sessionRemainingMs(s, 0), null);
+  E.startHand(s, 1000);
+  assert.strictEqual(E.sessionRemainingMs(s, 1000 + 10 * 60000), 50 * 60000);
+  E.setPaused(s, true, 1000 + 10 * 60000);
+  assert.strictEqual(E.sessionRemainingMs(s, 1000 + 30 * 60000), 50 * 60000);
+  E.setPaused(s, false, 1000 + 30 * 60000);
+  assert.strictEqual(E.sessionRemainingMs(s, 1000 + 40 * 60000), 40 * 60000);
+});
+
 console.log(`\n${passed} passed`);

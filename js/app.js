@@ -83,15 +83,17 @@
 
   // Planned handoff: send the whole game to another phone; it claims the room once we let go.
   let handoffTimer = null;
+  let handingOff = false;
   function handoff(targetId) {
     const t = pById(targetId);
     if (!online.has(targetId)) return toast(`${t.name} ไม่ได้ออนไลน์อยู่`);
     const prev = S.hostId;
+    handingOff = true;
     S.hostId = targetId;
     S.log.push(`👑 ${t.name} เป็นเจ้ามือแทน`);
     net.send(targetId, { t: 'handoff', s: S, hist: hist.slice(-30) });
     handoffTimer = setTimeout(() => {
-      handoffTimer = null; S.hostId = prev; S.log.pop();
+      handoffTimer = null; handingOff = false; S.hostId = prev; S.log.pop();
       toast(`ส่งต่อไม่สำเร็จ — เครื่องของ ${t.name} ไม่ตอบ`); render();
     }, 6000);
     toast(`กำลังส่งต่อให้ ${t.name}…`, true);
@@ -100,7 +102,7 @@
   function becomeClient(msg) {
     store.del(HOST_KEY);
     if (net) net.destroy();
-    hist = []; online = new Set(); ui.sheet = null; ui.proxy = false;
+    hist = []; online = new Set(); ui.sheet = null; ui.proxy = false; handingOff = false;
     toast(msg, true);
     startClient(code);
   }
@@ -119,13 +121,18 @@
     const fromHost = from === myId;
     try {
       if (!cmd || typeof cmd !== 'object') throw new Error('คำสั่งไม่ถูกต้อง');
+      if (handingOff) throw new Error('กำลังเปลี่ยนเจ้ามือ รอสักครู่แล้วกดใหม่');
+      // the player's screen may lag behind (e.g. someone raised meanwhile): don't apply a stale call
+      if (!fromHost && cmd.c === 'act' && cmd.seq !== (S.seq || 0)) throw new Error('ยอดบนโต๊ะเปลี่ยนไปแล้ว — ดูอีกครั้งแล้วกดใหม่');
       if (!fromHost) {
         if (!PLAYER_CMDS.includes(cmd.c) || cmd.pid !== from) throw new Error('เฉพาะเจ้ามือเท่านั้น');
         if (cmd.c === 'rebuy' && (S.settings.mode !== 'cash' || pById(from).stack > 0)) throw new Error('Rebuy ได้เมื่อชิปหมด (เฉพาะ Cash game)');
       }
+      const seq = (S.seq || 0) + 1;
       if (cmd.c === 'undo') {
         if (!hist.length) throw new Error('ไม่มีอะไรให้ย้อน');
         S = JSON.parse(hist.pop());
+        S.hostId = myId; // snapshots taken before a handoff name the previous host
         toast('ย้อนกลับ 1 ขั้นแล้ว', true);
       } else {
         const before = JSON.stringify(S);
@@ -133,6 +140,7 @@
         hist.push(before);
         if (hist.length > 40) hist.shift();
       }
+      S.seq = seq;
       saveHost(); broadcast(); render();
     } catch (e) {
       if (fromHost) toast(e.message); else net.send(from, { t: 'err', msg: e.message });
@@ -168,6 +176,10 @@
         S.settings = Object.assign({}, old, cmd.settings);
         if (S.handNo === 0 && S.settings.startStack !== old.startStack) S.players.forEach((p) => { p.stack = S.settings.startStack; });
         if (S.settings.mode !== old.mode && S.handNo === 0) { S.level = 0; S.levelStart = null; S.pausedAt = null; }
+        // cash clock: changing the length mid-game restarts the countdown from now
+        if (S.settings.mode === 'cash' && (S.settings.sessionMin || 0) !== (old.sessionMin || 0)) {
+          S.levelStart = S.handNo > 0 && S.settings.sessionMin > 0 ? t : null; S.pausedAt = null;
+        }
         S.level = Math.min(S.level, S.settings.levels.length - 1);
         return;
       }
@@ -314,7 +326,7 @@
       ${statusDot()}
       <span class="code" data-a="sheet" data-v="invite">${esc(code)}</span>
       <span class="blinds">${tour ? `Lv${S.level + 1} · ` : ''}${fmt(b.sb)}/${fmt(b.bb)}${b.ante ? ` · ante ${fmt(b.ante)}` : ''}</span>
-      ${tour ? `<span class="timer ${S.pausedAt != null ? 'paused' : ''}" id="timer"></span>` : ''}
+      ${tour || S.settings.sessionMin > 0 ? `<span class="timer ${S.pausedAt != null ? 'paused' : ''}" id="timer"></span>` : ''}
       <span class="spacer"></span>
       ${isHost() ? `<button class="sm" data-a="sheet" data-v="menu">☰ เจ้ามือ</button>` : `<button class="sm ghost" data-a="sheet" data-v="menu">☰</button>`}
     </div></div>`;
@@ -390,23 +402,26 @@
     const away = S.players.filter((p) => p.left);
     const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ชิป ${fmt(me.stack)}</span>
       <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
-    return `${standBanner}<div class="card pot">${potHtml}</div>${hostTools()}
+    const timeUp = ui.timeUp ? `<div class="banner row"><span>⏰ หมดเวลาเล่นแล้ว — เล่นมือนี้ให้จบแล้วดูว่าใครโอนให้ใคร</span>
+      <button class="primary sm" style="flex:none" data-a="sheet" data-v="summary">💸 สรุป</button></div>` : '';
+    return `${timeUp}${standBanner}<div class="card pot">${potHtml}</div>${hostTools()}
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
       ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${fmt(p.stack)}</b>`).join(' · ')}</div>` : ''}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
-      <div class="lastlog" data-a="sheet" data-v="log">${lastLog}<br><u>ดูประวัติทั้งหมด</u></div>`;
+      <div class="lastlog" data-a="sheet" data-v="hands">${lastLog}<br><u>ประวัติรายมือ</u></div>`;
   }
 
   // The host menu items used every few hands, one tap from the table.
   function hostTools() {
     if (!isHost()) return '';
     const tour = S.settings.mode === 'tournament';
+    const clock = tour || S.settings.sessionMin > 0;
     const paused = S.pausedAt != null;
-    return `<div class="hosttools">
+    const pause = `<button data-a="cmd" data-c="pause" data-v="${paused ? '' : '1'}" ${S.levelStart == null ? 'disabled' : ''}>${paused ? '▶️<span>เดินเวลา</span>' : '⏸️<span>หยุดเวลา</span>'}</button>`;
+    return `<div class="hosttools" style="grid-template-columns:repeat(${clock && !tour ? 5 : 4},1fr)">
       <button data-a="cmd" data-c="undo" ${hist.length ? '' : 'disabled'}>↩️<span>Undo</span></button>
       <button data-a="sheet" data-v="players">👥<span>ผู้เล่น/ชิป</span></button>
-      ${tour ? `<button data-a="cmd" data-c="pause" data-v="${paused ? '' : '1'}" ${S.levelStart == null ? 'disabled' : ''}>${paused ? '▶️<span>เดินเวลา</span>' : '⏸️<span>หยุดเวลา</span>'}</button>`
-        : `<button data-a="sheet" data-v="settings">⚙️<span>Blinds</span></button>`}
+      ${tour ? pause : `<button data-a="sheet" data-v="settings">⚙️<span>Blinds</span></button>${clock ? pause : ''}`}
       <button data-a="sheet" data-v="summary">📊<span>สรุป</span></button>
     </div>`;
   }
@@ -507,7 +522,7 @@
   // ---------- sheets ----------
   function sheet() {
     if (!ui.sheet) return '';
-    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, handoff: handoffSheet }[ui.sheet];
+    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet }[ui.sheet];
     if (!body) return '';
     const [title, html] = body();
     return `<div class="sheet-bg" data-a="closeSheet"><div class="sheet" data-stop="1">
@@ -521,7 +536,7 @@
       return ['เมนู', `<div class="menu">
         <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
         <button data-a="sheet" data-v="summary">📊 สรุปชิป</button>
-        <button data-a="sheet" data-v="log">📜 ประวัติ</button>
+        <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
         ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
         <button data-a="rename">✏️ เปลี่ยนชื่อ</button>` : ''}
         <button class="ghost" data-a="leave">ออกจากห้อง</button></div>`];
@@ -530,12 +545,13 @@
       <button data-a="cmd" data-c="undo">↩️ Undo (ย้อน 1 ขั้น)</button>
       <button data-a="sheet" data-v="players">👥 ผู้เล่น · ชิป · Rebuy · ที่นั่ง</button>
       <button data-a="sheet" data-v="settings">⚙️ ตั้งค่า Blinds / เกม</button>
-      ${tour ? `<button data-a="cmd" data-c="pause" data-v="${S.pausedAt != null ? '' : '1'}">${S.pausedAt != null ? '▶ เดินเวลาต่อ' : '⏸ หยุดเวลา Blind'}</button>
+      ${tour || S.settings.sessionMin > 0 ? `<button data-a="cmd" data-c="pause" data-v="${S.pausedAt != null ? '' : '1'}">${S.pausedAt != null ? '▶ เดินเวลาต่อ' : '⏸ หยุดเวลา'}</button>` : ''}
+      ${tour ? `
         <div class="grid2"><button data-a="cmd" data-c="level" data-d="-1">◀ Level ก่อน</button><button data-a="cmd" data-c="level" data-d="1">Level ถัดไป ▶</button></div>` : ''}
       <button data-a="sheet" data-v="invite">📱 ชวนเพื่อน (QR)</button>
       <button data-a="sheet" data-v="handoff">👑 เปลี่ยนเจ้ามือ (ส่งต่อให้คนอื่น)</button>
       <button data-a="sheet" data-v="summary">📊 สรุปผล / เงิน</button>
-      <button data-a="sheet" data-v="log">📜 ประวัติ</button>
+      <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
       <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
     </div>`];
@@ -574,6 +590,9 @@
         <div><label>BB</label><input id="s_bb" type="number" inputmode="numeric" value="${st.bb}"></div>
         <div><label>Ante</label><input id="s_ante" type="number" inputmode="numeric" value="${st.ante || 0}"></div></div>
         <label>มูลค่าเงินต่อ 1 buy-in (บาท, ใส่ 0 ถ้าไม่ใช้)</label><input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}">
+        <label>⏰ เวลาเล่น (นาที, ใส่ 0 = ไม่จับเวลา)</label><input id="s_session" type="number" inputmode="numeric" value="${st.sessionMin || 0}">
+        <div class="quickmin">${[60, 90, 120, 180].map((m) => `<button class="sm" data-a="sessionPreset" data-v="${m}">${m / 60} ชม.</button>`).join('')}</div>
+        <p class="muted small">เริ่มนับตอนมือแรก (ถ้าแก้ระหว่างเกมจะนับใหม่ทันที) · หมดเวลาแล้วจะแจ้งทุกเครื่อง</p>
         <p class="muted small">เปลี่ยน blind มีผลตั้งแต่มือถัดไป</p>
       </div>
       <div id="tourBox" ${st.mode === 'tournament' ? '' : 'hidden'}>
@@ -628,6 +647,22 @@
     return ['ผู้เล่น', `<p class="muted small" style="margin-top:0">ลำดับในรายการ = ลำดับที่นั่งเวียนตามเข็มนาฬิกา · แก้ชิป/Rebuy/ลบ ได้เมื่อคนนั้นไม่ได้อยู่ในมือที่กำลังเล่น</p>${rows}`];
   }
 
+  // Fewest transfers that settle everyone: biggest loser pays biggest winner first.
+  function settle(list) {
+    const cred = list.filter((x) => x.amt > 0).map((x) => ({ name: x.name, amt: x.amt })).sort((a, b) => b.amt - a.amt);
+    const debt = list.filter((x) => x.amt < 0).map((x) => ({ name: x.name, amt: -x.amt })).sort((a, b) => b.amt - a.amt);
+    const out = [];
+    let i = 0, j = 0;
+    while (i < debt.length && j < cred.length) {
+      const a = Math.min(debt[i].amt, cred[j].amt);
+      if (a > 0) out.push({ from: debt[i].name, to: cred[j].name, amt: a });
+      debt[i].amt -= a; cred[j].amt -= a;
+      if (!debt[i].amt) i++;
+      if (!cred[j].amt) j++;
+    }
+    return out;
+  }
+
   function summarySheet() {
     const st = S.settings;
     if (st.mode === 'tournament') {
@@ -644,9 +679,40 @@
     const rows = data.map(({ p, net, cash }) => `<tr><td>${esc(p.name)}${p.left ? ' <span class="muted small">(ลุก)</span>' : ''}</td><td>${p.buyIns}</td><td>${fmt(p.stack)}</td>
       <td class="${net > 0 ? 'pos' : net < 0 ? 'neg' : ''}">${net > 0 ? '+' : ''}${fmt(net)}</td>
       ${money ? `<td class="${cash > 0 ? 'pos' : cash < 0 ? 'neg' : ''}">${cash > 0 ? '+' : ''}${fmt(Math.round(cash))}</td>` : ''}</tr>`).join('');
+    const owed = data.map(({ p, net, cash }) => ({ name: p.name, amt: money ? Math.round(cash) : net }));
+    const unit = money ? 'บาท' : 'ชิป';
+    const tx = settle(owed);
+    const off = owed.reduce((a, o) => a + o.amt, 0);
+    const txHtml = tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${fmt(t.amt)} ${unit}</b></div>`).join('')
+      : '<p class="muted small">ยังไม่มีใครได้หรือเสีย</p>';
     return ['สรุปชิป', `<table><tr><th>ผู้เล่น</th><th>Buy-in</th><th>ชิป</th><th>กำไร</th>${money ? '<th>บาท</th>' : ''}</tr>${rows}</table>
+      <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${txHtml}
+      ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${fmt(off)} ${unit} (ชิปบนโต๊ะไม่ตรงกับยอด buy-in เช่น มีการแก้ชิป${money ? ' หรือปัดเศษ' : ''})</p>` : ''}
       ${S.hand && !S.hand.done ? '<p class="muted small">* มือนี้ยังไม่จบ ชิปที่อยู่ใน pot ยังไม่ถูกนับ</p>' : ''}
       ${money ? '' : '<p class="muted small">ตั้ง "มูลค่าเงินต่อ 1 buy-in" ในตั้งค่า เพื่อให้คำนวณเป็นบาท</p>'}`];
+  }
+
+  function handsSheet() {
+    const hs = (S.history || []).slice().reverse();
+    const signed = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : 'muted'}">${n > 0 ? '+' : ''}${fmt(n)}</span>`;
+    const items = hs.map((h, i) => {
+      const nm = (id) => esc(h.names[id] || (pById(id) || {}).name || '?');
+      const winners = h.ids.filter((id) => h.delta[id] > 0).map((id) => `${nm(id)} ${signed(h.delta[id])}`).join(', ');
+      const mine = h.delta[myId] != null ? ` · คุณ ${signed(h.delta[myId])}` : '';
+      const streets = E.STREETS.slice(0, 4).map((st) => {
+        const acts = h.actions.filter((a) => a.st === st);
+        if (!acts.length) return '';
+        return `<div class="hst"><b>${E.streetName(st)}</b> ${acts.map((a) => `${a.id ? nm(a.id) + ' ' : 'ทุกคน '}${esc(a.t)}`).join(' · ')}</div>`;
+      }).join('');
+      const pots = h.pots.map((p, j) => `${h.pots.length > 1 ? (j ? `Side ${j}` : 'Main') : 'Pot'} ${fmt(p.amount)} → ${p.winners.map(nm).join(' + ')}`).join(' · ');
+      const ended = h.street === 'showdown' ? (h.runout ? 'All-in showdown' : 'Showdown') : `จบที่ ${E.streetName(h.street)} (คนอื่น Fold)`;
+      const deltas = h.ids.slice().sort((a, b) => h.delta[b] - h.delta[a]).map((id) => `<span>${nm(id)} ${signed(h.delta[id])}</span>`).join('');
+      return `<details class="hand" ${i === 0 ? 'open' : ''}><summary><b>มือที่ ${h.no}</b> · ${winners || '-'}${mine}</summary>
+        <div class="muted small">Blinds ${fmt(h.blinds.sb)}/${fmt(h.blinds.bb)}${h.blinds.ante ? ` ante ${fmt(h.blinds.ante)}` : ''} · Dealer ${nm(h.btn)} · ${ended}</div>
+        ${streets}<div class="hst"><b>ผล</b> ${pots}</div><div class="hdelta">${deltas}</div></details>`;
+    }).join('');
+    return ['ประวัติรายมือ', `${items || '<p class="muted">ยังไม่มีมือที่จบ</p>'}
+      <p class="center small" style="margin-top:12px"><u data-a="sheet" data-v="log">ดูบันทึกเหตุการณ์ทั้งหมด</u> <span class="muted">· เก็บ 30 มือล่าสุด</span></p>`];
   }
 
   function logSheet() {
@@ -666,9 +732,28 @@
       const lv = S.level; E.tick(S, Date.now());
       if (S.level !== lv) { saveHost(); broadcast(); return render(); }
     }
-    const ms = E.levelRemainingMs(S, now());
-    const m = Math.floor(ms / 60000); const sec = Math.floor(ms / 1000) % 60;
-    el.textContent = (S.levelStart == null ? '' : S.pausedAt != null ? '⏸ ' : '') + m + ':' + String(sec).padStart(2, '0');
+    const pre = S.levelStart != null && S.pausedAt != null ? '⏸ ' : '';
+    if (S.settings.mode === 'cash') {
+      const left = E.sessionRemainingMs(S, now());
+      const up = left != null && left <= 0;
+      if (up && !ui.timeUp) {
+        toast('⏰ หมดเวลาเล่นแล้ว — จบมือนี้แล้วดูสรุปการโอน', true);
+        try { navigator.vibrate && navigator.vibrate([300, 100, 300]); } catch (e) { /* ignore */ }
+      }
+      const changed = up !== !!ui.timeUp;
+      ui.timeUp = up;
+      if (changed) return render();
+      el.textContent = up ? '⏰ หมดเวลา' : '⏰ ' + pre + clockText(left == null ? S.settings.sessionMin * 60000 : left);
+      el.classList.toggle('over', up);
+      return;
+    }
+    el.textContent = pre + clockText(E.levelRemainingMs(S, now()));
+  }
+
+  function clockText(ms) {
+    const t = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(t / 3600); const m = Math.floor(t / 60) % 60; const sec = t % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
   }
   setInterval(updateTimer, 1000);
 
@@ -764,7 +849,7 @@
       }
       case 'act': {
         const id = actorId(); if (!id) return;
-        const cmd = { c: 'act', pid: id, type: d.t };
+        const cmd = { c: 'act', pid: id, type: d.t, seq: S.seq || 0 };
         if (d.t === 'raise') cmd.amount = ui.raiseTo;
         if (d.t === 'fold' && S.hand.currentBet - (S.hand.bets[id] || 0) === 0 && !confirm('Check ได้ฟรี — ยืนยันจะ Fold?')) return;
         ui.raiseOpen = false; ui.raiseTo = 0;
@@ -829,6 +914,7 @@
         startHost(code, S, [], true);
         break;
       }
+      case 'sessionPreset': document.getElementById('s_session').value = d.v; break;
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;
       case 'saveSettings': saveSettings(); break;
       case 'lvAdd': {
@@ -870,7 +956,7 @@
     const mode = document.getElementById('s_mode').value;
     const settings = { mode, startStack: num('s_stack') || 1000 };
     if (mode === 'cash') {
-      Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money') });
+      Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: num('s_session') });
       if (!settings.bb || settings.sb > settings.bb) return toast('Blind ไม่ถูกต้อง');
     } else {
       const levels = readLevels();

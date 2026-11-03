@@ -19,6 +19,7 @@
         startStack: 1000,
         sb: 5, bb: 10, ante: 0, // cash blinds
         buyInValue: 0,          // money per buy-in, for the settlement table
+        sessionMin: 0,          // cash: planned session length in minutes (0 = no clock)
         levels: DEFAULT_LEVELS,
       }, settings || {}),
       players: [],
@@ -29,6 +30,7 @@
       levelStart: null,
       pausedAt: null,
       finishOrder: [],          // tournament: ids in order of elimination
+      history: [],              // summaries of finished hands, newest last
       log: [],
     };
   }
@@ -132,10 +134,8 @@
 
   function startHand(s, now) {
     if (s.hand && !s.hand.done) fail('มือปัจจุบันยังไม่จบ');
-    if (s.settings.mode === 'tournament') {
-      if (s.levelStart == null) s.levelStart = now;
-      tick(s, now);
-    }
+    if (s.levelStart == null && (s.settings.mode === 'tournament' || s.settings.sessionMin > 0)) s.levelStart = now;
+    tick(s, now);
     const ids = eligible(s).map((p) => p.id);
     if (ids.length < 2) fail('ต้องมีผู้เล่นที่มีชิปอย่างน้อย 2 คน');
     const b = blinds(s);
@@ -149,13 +149,16 @@
       bets: {}, contrib: {}, folded: {}, allIn: {}, acted: {}, noRaise: {},
       currentBet: b.bb, minRaise: b.bb, toAct: null, last: null,
       pots: null, done: false, result: null, runout: false, lastAct: {},
+      start: {}, actions: [], blinds: b,
     };
+    ids.forEach((id) => { h.start[id] = player(s, id).stack; });
     if (b.ante) ids.forEach((id) => {
       const p = player(s, id); const a = Math.min(b.ante, p.stack);
       p.stack -= a; h.contrib[id] = a; if (p.stack === 0) h.allIn[id] = true;
     });
-    post(s, h, sbId, b.sb);
-    post(s, h, bbId, b.bb);
+    if (b.ante) h.actions.push({ st: 'preflop', id: null, t: `Ante ${b.ante}` });
+    h.actions.push({ st: 'preflop', id: sbId, t: `SB ${post(s, h, sbId, b.sb)}` });
+    h.actions.push({ st: 'preflop', id: bbId, t: `BB ${post(s, h, bbId, b.bb)}` });
     addLog(s, `— มือที่ ${h.no} · Blinds ${b.sb}/${b.bb} —`);
     findNext(s, h, bbId);
   }
@@ -195,6 +198,8 @@
     const toCall = h.currentBet - bet;
     const maxTo = bet + p.stack;
     let label = type[0].toUpperCase() + type.slice(1);
+    const street = h.street;
+    let text = '';
 
     if (type === 'allin') {
       amount = maxTo;
@@ -203,14 +208,14 @@
 
     if (type === 'fold') {
       h.folded[id] = true;
-      addLog(s, `${p.name} Fold`);
+      text = 'Fold';
     } else if (type === 'check') {
       if (toCall > 0) fail(`ต้อง Call ${toCall}`);
-      addLog(s, `${p.name} Check`);
+      text = 'Check';
     } else if (type === 'call') {
       if (toCall <= 0) fail('ไม่มีอะไรให้ Call');
       const a = post(s, h, id, toCall);
-      addLog(s, `${p.name} Call ${a}${h.allIn[id] ? ' (All-in)' : ''}`);
+      text = `Call ${a}${h.allIn[id] ? ' (All-in)' : ''}`;
     } else if (type === 'raise') {
       amount = Math.floor(Number(amount));
       if (!(amount > h.currentBet)) fail('ยอด Raise ต้องมากกว่า bet ปัจจุบัน');
@@ -231,8 +236,11 @@
         h.ids.forEach((o) => { if (o !== id && h.acted[o]) { h.acted[o] = false; h.noRaise[o] = true; } });
       }
       h.currentBet = amount;
-      addLog(s, `${p.name} ${wasBet ? 'Bet' : 'Raise to'} ${amount}${isAllIn ? ' (All-in)' : ''}`);
+      text = `${wasBet ? 'Bet' : 'Raise to'} ${amount}${isAllIn ? ' (All-in)' : ''}`;
     } else fail('คำสั่งไม่ถูกต้อง');
+
+    addLog(s, `${p.name} ${text}`);
+    h.actions.push({ st: street, id, t: text });
 
     h.acted[id] = true;
     h.last = { id, type, amount: h.bets[id] || 0 };
@@ -320,6 +328,7 @@
     h.done = true;
     h.toAct = null;
     addLog(s, Object.entries(won).map(([id, a]) => `${player(s, id).name} ได้ ${a}`).join(', '));
+    recordHistory(s, h);
     if (s.settings.mode === 'tournament') {
       // bust order: smaller starting stack this hand busts "first"
       const busted = h.ids.filter((id) => player(s, id).stack === 0)
@@ -329,6 +338,22 @@
         addLog(s, `${p.name} ตกรอบ`);
       });
     }
+  }
+
+  function recordHistory(s, h) {
+    const names = {}; const delta = {};
+    h.ids.forEach((id) => { const p = player(s, id); names[id] = p.name; delta[id] = p.stack - h.start[id]; });
+    s.history = (s.history || []).concat({
+      no: h.no, btn: h.btn, blinds: h.blinds, street: h.street, runout: h.runout, ids: h.ids, names,
+      actions: h.actions, pots: h.pots.map((p) => ({ amount: p.amount, winners: p.winners })), delta,
+    }).slice(-30);
+  }
+
+  // cash session clock: ms left, or null when no clock is set / not started
+  function sessionRemainingMs(s, now) {
+    if (s.settings.mode !== 'cash' || !(s.settings.sessionMin > 0) || s.levelStart == null) return null;
+    const t = s.pausedAt != null ? s.pausedAt : now;
+    return s.settings.sessionMin * 60000 - (t - s.levelStart);
   }
 
   // ---- off-hand admin ----
@@ -348,7 +373,7 @@
     stack = Math.max(0, Math.floor(Number(stack) || 0));
     addLog(s, `${p.name} ชิป ${p.stack} → ${stack} (แก้โดยเจ้ามือ)`);
     p.stack = stack;
-    if (stack > 0) p.out = false;
+    if (stack > 0) { p.out = false; s.finishOrder = s.finishOrder.filter((x) => x !== id); }
   }
 
   function setSitOut(s, id, v) {
@@ -373,7 +398,7 @@
 
   const Engine = {
     STREETS, DEFAULT_LEVELS, newGame, addPlayer, removePlayer, movePlayer, startHand, act, award,
-    rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, blinds, potTotal, computePots,
+    rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, sessionRemainingMs, blinds, potTotal, computePots,
     eligible, inHand, streetName,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
