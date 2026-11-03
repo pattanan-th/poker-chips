@@ -390,11 +390,25 @@
     const away = S.players.filter((p) => p.left);
     const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ชิป ${fmt(me.stack)}</span>
       <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
-    return `${standBanner}<div class="card pot">${potHtml}</div>
+    return `${standBanner}<div class="card pot">${potHtml}</div>${hostTools()}
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
       ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${fmt(p.stack)}</b>`).join(' · ')}</div>` : ''}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
       <div class="lastlog" data-a="sheet" data-v="log">${lastLog}<br><u>ดูประวัติทั้งหมด</u></div>`;
+  }
+
+  // The host menu items used every few hands, one tap from the table.
+  function hostTools() {
+    if (!isHost()) return '';
+    const tour = S.settings.mode === 'tournament';
+    const paused = S.pausedAt != null;
+    return `<div class="hosttools">
+      <button data-a="cmd" data-c="undo" ${hist.length ? '' : 'disabled'}>↩️<span>Undo</span></button>
+      <button data-a="sheet" data-v="players">👥<span>ผู้เล่น/ชิป</span></button>
+      ${tour ? `<button data-a="cmd" data-c="pause" data-v="${paused ? '' : '1'}" ${S.levelStart == null ? 'disabled' : ''}>${paused ? '▶️<span>เดินเวลา</span>' : '⏸️<span>หยุดเวลา</span>'}</button>`
+        : `<button data-a="sheet" data-v="settings">⚙️<span>Blinds</span></button>`}
+      <button data-a="sheet" data-v="summary">📊<span>สรุป</span></button>
+    </div>`;
   }
 
   function playerRow(p) {
