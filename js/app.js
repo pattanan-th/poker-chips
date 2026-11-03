@@ -562,21 +562,38 @@
     const won = h && h.done && h.result && h.result[p.id] ? `<div class="won">+${fmt(h.result[p.id])}</div>` : '';
     return `<div class="${cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm')} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
+      <div class="nm"><b>${esc(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
       <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
 
   // ---------- app-dealt cards ----------
   const SUIT_SYM = { s: '♠', h: '♥', d: '♦', c: '♣' };
-  function cardHtml(c, size) {
+  // Flip a card in the first time it is drawn. The page re-renders often, so each card keeps the
+  // time it first appeared and later renders resume the animation where it is (negative delay).
+  const FLIP_MS = 450; const FLIP_GAP = 120;
+  const flipSeen = new Map();
+  let flipReady = false; // cards already on the table when the room first shows don't animate
+  function flipAttr(key, i) {
+    const t = Date.now();
+    if (!flipReady && !flipSeen.size) setTimeout(() => { flipReady = true; }, 300);
+    if (!flipSeen.has(key)) {
+      if (flipSeen.size > 300) flipSeen.clear();
+      flipSeen.set(key, flipReady ? t + i * FLIP_GAP : 0);
+    }
+    const since = t - flipSeen.get(key);
+    return since < FLIP_MS ? { cls: ' flip', style: ` style="animation-delay:${-since}ms"` } : { cls: '', style: '' };
+  }
+  function cardHtml(c, size, key, i) {
     if (c == null) return `<span class="pc back ${size || ''}"></span>`;
     const r = Cards.RANKS[Cards.rankOf(c)]; const su = Cards.SUITS[Cards.suitOf(c)];
-    return `<span class="pc ${size || ''} ${su === 'h' || su === 'd' ? 'red' : ''}">${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
+    const f = key ? flipAttr(`${key}:${c}`, i || 0) : { cls: '', style: '' };
+    return `<span class="pc ${size || ''} ${su === 'h' || su === 'd' ? 'red' : ''}${f.cls}"${f.style}>${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
   }
-  const cardsHtml = (list, size) => `<span class="pcs">${list.map((c) => cardHtml(c, size)).join('')}</span>`;
+  const cardsHtml = (list, size, key) => `<span class="pcs">${list.map((c, i) => cardHtml(c, size, key, i)).join('')}</span>`;
   function boardHtml(board) {
-    const slots = [0, 1, 2, 3, 4].map((i) => (i < board.length ? cardHtml(board[i]) : '<span class="pc slot"></span>')).join('');
+    const firstNew = board.findIndex((c) => !flipSeen.has(`b${S.hand.no}:${c}`));
+    const slots = [0, 1, 2, 3, 4].map((i) => (i < board.length ? cardHtml(board[i], '', `b${S.hand.no}`, firstNew < 0 ? 0 : i - firstNew) : '<span class="pc slot"></span>')).join('');
     return `<div class="board">${slots}</div>`;
   }
 
@@ -608,7 +625,7 @@
     if (ui.holeHidden) {
       return `<div class="card mycards hidden" data-a="holeHide"><span class="pcs">${cardHtml(null, 'lg')}${cardHtml(null, 'lg')}</span><span class="muted small">ไพ่ของคุณ · แตะเพื่อดู</span></div>`;
     }
-    return `<div class="card mycards ${folded ? 'fold' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg')}
+    return `<div class="card mycards ${folded ? 'fold' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg', `m${h.no}`)}
       <span class="small"><b>ไพ่ของคุณ</b>${h.game === 'plo' ? ' <span class="muted">(ใช้ 2 ใบ + กลาง 3 ใบ)</span>' : ''}${folded ? ' · Fold แล้ว' : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}${eqHtml}${showBtn}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
   }
 
