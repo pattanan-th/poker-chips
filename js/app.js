@@ -329,6 +329,7 @@
     const myTurn = !!(h && !h.done && h.toAct === myId);
     if (myTurn && !ui.wasMyTurn) { try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) { /* ignore */ } }
     ui.wasMyTurn = myTurn;
+    Sfx.update(S, myId);
 
     const scrollY = window.scrollY;
     // a state broadcast can arrive while the player is typing a bet; keep their input
@@ -887,6 +888,7 @@
         <button data-a="sheet" data-v="summary">📊 สรุปประจำโต๊ะ</button>
         <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
         <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
+        <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
         ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
         <button data-a="rename">✏️ เปลี่ยนชื่อ</button>` : ''}
         <button class="ghost" data-a="leave">ออกจากห้อง</button></div>`];
@@ -903,6 +905,7 @@
       <button data-a="sheet" data-v="summary">📊 สรุปผล / เงิน</button>
       <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
       <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
+      <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
       <button data-a="goHome">🏠 กลับหน้าแรก (เก็บห้องไว้)</button>
       <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
@@ -1434,6 +1437,7 @@
         document.querySelectorAll('#cardsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
         document.getElementById('cardsHint').hidden = d.v !== '1';
         break;
+      case 'mute': Sfx.setMuted(!Sfx.isMuted()); render(); break;
       case 'holeHide': ui.holeHidden = !ui.holeHidden; render(); break;
       case 'creditMode': document.getElementById('s_credit').value = d.v; markCredit(); break;
       case 'sessionPreset': document.getElementById('s_session').value = d.v; markSessionSeg(); break;
