@@ -219,7 +219,7 @@
     role = 'client'; code = c;
     store.set('pk:name', myName);
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
-    hostLostAt = null;
+    hostLostAt = null; ui.roomNoted = false;
     rememberRoom(code, 'client', S);
     net = Net.client(code, myId, myName, hello, {
       onStatus(st) {
@@ -237,6 +237,8 @@
         } else if (msg.t === 'state') {
           clockSkew = msg.now - Date.now();
           S = msg.s; online = new Set(msg.online); kicked = false;
+          // fill in mode/players for the home screen's recent-rooms card once we know them
+          if (!ui.roomNoted) { ui.roomNoted = true; rememberRoom(code, 'client', S); }
           render();
         } else if (msg.t === 'ping') {
           clockSkew = msg.now - Date.now();
