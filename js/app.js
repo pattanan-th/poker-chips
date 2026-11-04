@@ -629,7 +629,7 @@
     const awayHtml = away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : '';
     if (ui.view === 'table') {
       return `${timeUp}${standBanner}${feltTable(potHtml)}${awayHtml}
-        ${h && h.street === 'showdown' && !h.done ? showdown() : ''}${feed}`;
+        ${h && h.street === 'showdown' && !h.done ? showdown() : ''}`;
     }
     return `${timeUp}${standBanner}<p class="center small viewsw"><u data-a="view" data-v="table">🃏 เปลี่ยนเป็นมุมมองโต๊ะ</u></p><div class="card pot">${potHtml}</div>${myCardsPanel()}${hostTools()}
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
@@ -731,7 +731,25 @@
       <div class="tcenter"><div class="pot">${potHtml}</div>
         <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button>`
           : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>'}<button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button></div>
+        ${tableLog(h, H > 600 ? 5 : H > 470 ? 4 : 3)}
       </div>${seats}${meSeat ? myCardsAtSeat(meSeat[0] / W * 100, (meSeat[1] - 80 * k) / H * 100, meP.betAmt) : ''}</div>`;
+  }
+
+  // The latest actions of this hand, newest on top and older ones fading out; tap for the whole hand.
+  function tableLog(h, max) {
+    if (!h) return '';
+    const nm = (id) => esc((pById(id) || {}).name || '?');
+    const lines = [];
+    let st = null;
+    h.actions.forEach((a) => {
+      if (a.st !== st) { if (st) lines.push(`<i>— ${E.streetName(a.st)} —</i>`); st = a.st; }
+      lines.push(`${a.id ? `<b>${nm(a.id)}</b> ` : ''}${esc(a.t)}`);
+    });
+    if (h.done && !h.voided) Object.entries(h.result || {}).forEach(([id, amt]) => lines.push(`🏆 <b>${nm(id)}</b> ได้ ${fmt(amt)}`));
+    const recent = lines.slice(-max).reverse();
+    const fade = [1, 0.62, 0.42, 0.28, 0.18];
+    return `<div class="tlog" data-a="sheet" data-v="hands">${recent.map((l, i) => `<div style="opacity:${fade[i] || 0.15}">${l}</div>`).join('')}
+      ${lines.length > max ? '<div class="more">แตะดูทั้งหมด ›</div>' : ''}</div>`;
   }
 
   // My hole cards in front of my seat, with what I hold, my chance to win and my bet.
