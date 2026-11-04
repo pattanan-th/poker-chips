@@ -1117,7 +1117,7 @@
     const r = Cards.RANKS[Cards.rankOf(c)]; const su = Cards.SUITS[Cards.suitOf(c)];
     const f = key ? flipAttr(`${key}:${c}`, i || 0) : { cls: '', style: '' };
     const lit = hl && hl.pool.has(c) ? (hl.on.has(c) ? ' hi' : ' lo') : '';
-    return `<span class="pc ${size || ''} ${su === 'h' || su === 'd' ? 'red' : ''}${f.cls}${lit}"${f.style}>${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
+    return `<span class="pc ${size || ''} su-${su}${f.cls}${lit}"${f.style}>${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
   }
   const cardsHtml = (list, size, key) => `<span class="pcs">${list.map((c, i) => cardHtml(c, size, key, i)).join('')}</span>`;
   function boardHtml(board) {
