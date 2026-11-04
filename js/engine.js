@@ -368,6 +368,16 @@
     }
   }
 
+  // Call the hand off: everyone gets back what they put in (used when the app-dealt deck is lost).
+  function voidHand(s, reason) {
+    const h = s.hand;
+    if (!h || h.done) return;
+    h.ids.forEach((id) => { player(s, id).stack += h.contrib[id] || 0; });
+    h.contrib = {}; h.bets = {};
+    Object.assign(h, { done: true, voided: true, toAct: null, result: {} });
+    addLog(s, `มือที่ ${h.no} ยกเลิก — คืนชิปทุกคน${reason ? ` (${reason})` : ''}`);
+  }
+
   function recordHistory(s, h) {
     const names = {}; const delta = {};
     h.ids.forEach((id) => { const p = player(s, id); names[id] = p.name; delta[id] = p.stack - h.start[id]; });
@@ -438,7 +448,7 @@
   const Engine = {
     STREETS, DEFAULT_LEVELS, newGame, addPlayer, removePlayer, movePlayer, startHand, act, award,
     rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, sessionRemainingMs, blinds, potTotal, computePots,
-    eligible, inHand, streetName, invested, CREDIT, isCredit, chipText, resetStacks, raiseCap,
+    eligible, inHand, streetName, invested, CREDIT, isCredit, chipText, resetStacks, raiseCap, voidHand,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
   else root.Engine = Engine;

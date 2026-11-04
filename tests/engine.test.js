@@ -289,4 +289,14 @@ test('PLO cap never exceeds the stack', () => {
   assert.strictEqual(E.raiseCap(s, s.hand.toAct), 20);
 });
 
+test('voidHand refunds everyone', () => {
+  const s = E.newGame({ sb: 5, bb: 10, startStack: 1000 });
+  ['a', 'b', 'c'].forEach((id) => E.addPlayer(s, id, id));
+  E.startHand(s, 0);
+  E.act(s, s.hand.toAct, 'raise', 40);
+  E.voidHand(s, 'test');
+  assert.ok(s.hand.done && s.hand.voided);
+  assert.deepStrictEqual(s.players.map((p) => p.stack), [1000, 1000, 1000]);
+});
+
 console.log(`\n${passed} passed`);

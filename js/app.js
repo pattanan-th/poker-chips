@@ -562,7 +562,7 @@
     else if (h.done) {
       const total = Object.values(h.result || {}).reduce((a, b) => a + b, 0);
       potHtml = `<div class="lbl">มือที่ ${h.no} จบแล้ว</div><div class="amt">${fmt(total)}</div>
-        <div class="hint">${Object.entries(h.result || {}).map(([id, a]) => `${esc((pById(id) || {}).name)} ได้ ${fmt(a)}`).join(' · ')}</div>`;
+        <div class="hint">${h.voided ? 'ยกเลิกมือนี้ — คืนชิปทุกคนแล้ว' : ''}${Object.entries(h.result || {}).map(([id, a]) => `${esc((pById(id) || {}).name)} ได้ ${fmt(a)}`).join(' · ')}</div>`;
     } else {
       const hint = h.appCards ? '' : h.street === 'showdown' ? (h.runout ? 'เปิดไพ่กลางให้ครบ 5 ใบ แล้วหงายไพ่' : 'หงายไพ่ — เจ้ามือเลือกผู้ชนะ')
         : { flop: 'ดีลเลอร์เปิด Flop 3 ใบ', turn: 'ดีลเลอร์เปิด Turn', river: 'ดีลเลอร์เปิด River', preflop: `แจกไพ่คนละ ${h.game === 'plo' ? 4 : 2} ใบ` }[h.street];
@@ -1537,6 +1537,8 @@
         if (!confirm('รับเป็นเจ้ามือแทน? มือถือเครื่องนี้ต้องเปิดแอปค้างไว้ตลอดเกม')) return;
         S.hostId = myId;
         S.log.push(`👑 ${myName} รับเป็นเจ้ามือแทน (เจ้ามือเดิมหลุด)`);
+        // the app-dealt deck left with the old host: re-dealing mid-hand would change cards already seen
+        if (S.hand && !S.hand.done && S.hand.appCards) E.voidHand(S, 'สำรับไพ่อยู่ในเครื่องเจ้ามือเดิม');
         net.destroy();
         startHost(code, S, [], true);
         break;
