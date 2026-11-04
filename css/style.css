@@ -368,3 +368,9 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 /* the cards that make the hand */
 .pc.hi { box-shadow: 0 0 0 3px var(--gold), 0 0 12px rgba(242, 193, 78, .7); }
 .pc.lo { filter: brightness(.6) saturate(.7); }
+
+/* random name dice */
+.namerow input { flex: 1; }
+.dice { flex: none; width: 48px; font-size: 22px; padding: 6px 0; }
+.dice.roll { animation: diceroll .45s ease-out; }
+@keyframes diceroll { 0% { transform: rotate(0) scale(1); } 50% { transform: rotate(200deg) scale(1.2); } 100% { transform: rotate(360deg) scale(1); } }

@@ -13,6 +13,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }, // false: private mode or storage full
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
+  const RANDOM_NAMES = ['เจ', 'โจ้', 'จิน', 'แจง', 'เจฟ', 'เจี๊ยบ', 'จอร์จ', 'จอห์น', 'จิ๊บ']; // 🎲 next to the name box
   const NAME_MAX = 100; // only a guard against junk; long names scroll in the player list
   const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   // ?pid= lets several tabs on one device be different players (testing)
@@ -584,7 +585,8 @@
       <p class="center muted">ไพ่จริงบนโต๊ะ · ชิปบนมือถือ</p>
       <div class="card">
         <label>ชื่อของคุณ</label>
-        <input id="name" maxlength="${NAME_MAX}" value="${esc(myName)}" placeholder="เช่น โจโจ้" autocomplete="nickname">
+        <div class="row namerow"><input id="name" maxlength="${NAME_MAX}" value="${esc(myName)}" placeholder="เช่น โจโจ้" autocomplete="nickname">
+          <button class="dice" data-a="randName" title="สุ่มชื่อ" aria-label="สุ่มชื่อ">🎲</button></div>
         <label>รูปแทนตัว <span class="small">(ไม่เลือก = ใช้ตัวแรกของชื่อ)</span></label>
         ${emojiPicker()}
       </div>
@@ -2046,6 +2048,13 @@
         document.querySelectorAll('#cardsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
         break;
       case 'mute': Sfx.setMuted(!Sfx.isMuted()); render(); break;
+      case 'randName': {
+        const i = document.getElementById('name');
+        const pool = RANDOM_NAMES.filter((n) => n !== i.value.trim());
+        i.value = pool[Math.floor(Math.random() * pool.length)];
+        el.classList.remove('roll'); void el.offsetWidth; el.classList.add('roll');
+        break;
+      }
       case 'pickEmoji': { const i = document.getElementById('emojiIn'); if (i) { i.value = ''; i.classList.remove('on'); } setEmoji(d.v); break; }
       case 'view': ui.view = d.v; store.set('pk:view', d.v); ui.sheet = null; render(); break;
       case 'holeHide': ui.holeHidden = !ui.holeHidden; render(); break;
