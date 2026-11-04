@@ -252,7 +252,7 @@ test('no buy-in (credit): balances start at 0, go negative, never all-in', () =>
   assert.deepStrictEqual(bal(), [0, 0]);
   E.startHand(s, 0);
   const first = s.hand.toAct; const other = first === 'p0' ? 'p1' : 'p0';
-  E.act(s, first, 'raise', 5000);
+  E.act(s, first, 'raise', 30); // credit play is pot-limit, so 30 is the cap here
   E.act(s, other, 'call');
   assert.ok(!s.hand.allIn[first] && !s.hand.allIn[other]);
   E.act(s, other, 'check'); E.act(s, first, 'check');
@@ -261,7 +261,7 @@ test('no buy-in (credit): balances start at 0, go negative, never all-in', () =>
   E.award(s, [[first]]);
   const b = bal();
   assert.strictEqual(b[0] + b[1], 0);
-  assert.strictEqual(Math.abs(b[0]), 5000);
+  assert.strictEqual(Math.abs(b[0]), 30);
   assert.throws(() => E.rebuy(s, 'p0'), /Rebuy/);
   E.setStack(s, 'p0', -120);
   assert.strictEqual(bal()[0], -120);
