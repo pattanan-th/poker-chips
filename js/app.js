@@ -1206,9 +1206,9 @@
     if (!ui.sheet) return '';
     const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet, ranks: ranksSheet }[ui.sheet];
     if (!body) return '';
-    const [title, html] = body();
+    const [title, html, action] = body();
     return `<div class="sheet-bg" data-a="closeSheet" data-sheet="${ui.sheet}"><div class="sheet" data-stop="1">
-      <div class="head"><h2 style="margin:0">${title}</h2><button class="sm ghost" data-a="closeSheet">ปิด</button></div>${html}</div></div>`;
+      <div class="head"><h2 style="margin:0">${title}</h2><span class="row" style="gap:6px">${action || ''}<button class="sm ghost" data-a="closeSheet">ปิด</button></span></div>${html}</div></div>`;
   }
 
   function menuSheet() {
@@ -1290,7 +1290,7 @@
     // label with a small ⓘ that opens its explanation underneath
     const lab = (text, k, tip) => `<label>${text} <button class="tipbtn" data-a="tip" data-k="${k}" aria-label="คำอธิบาย">ⓘ</button></label><p class="tip" id="tip_${k}" hidden>${tip}</p>`;
     const seg = (id, cur, opts, act) => `<div class="seg" ${id ? `id="${id}"` : ''}>${opts.map(([v, l]) => `<button class="${String(cur) === String(v) ? 'on' : ''}" data-a="${act}" data-v="${v}">${l}</button>`).join('')}</div>`;
-    const timeRow = (inputId, val, presets, unit, segId) => `<div class="row trow">${segId ? `<div class="seg" id="${segId}">` : '<div class="seg">'}${presets.map(([v, l]) => `<button class="${Number(val) === v ? 'on' : ''}" ${segId ? `data-a="sessionPreset"` : `data-a="fillNum" data-t="${inputId}"`} data-v="${v}">${l}</button>`).join('')}</div>
+    const timeRow = (inputId, val, presets, unit) => `<div class="row trow"><div class="seg">${presets.map(([v, l]) => `<button class="${Number(val) === v ? 'on' : ''}" data-a="fillNum" data-t="${inputId}" data-v="${v}">${l}</button>`).join('')}</div>
       <input id="${inputId}" type="number" inputmode="numeric" min="0" value="${val}" aria-label="${unit}"></div>`;
     return ['ตั้งค่า', `<div class="settings">
       ${lab('รูปแบบ', 'mode', 'Cash game: ซื้อชิป/Rebuy ได้ เล่นจนเลิก · Tournament: ชิปเท่ากัน Blind ขึ้นตามเวลา เล่นจนเหลือคนเดียว · เปลี่ยนไม่ได้หลังเริ่มเกม')}
@@ -1317,8 +1317,6 @@
         <div class="grid3 sub"><span>SB</span><span>BB</span><span>Ante</span></div>
         <div id="moneyBuyIn" ${st.credit ? 'hidden' : ''}>${lab('บาท / 1 buy-in', 'money', 'ใช้คิดเงินในหน้าสรุปว่าใครโอนให้ใคร · 0 = ไม่คิดเป็นเงิน')}<input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}"></div>
         <div id="moneyCredit" ${st.credit ? '' : 'hidden'}>${lab('บาท / 1 ชิป', 'rate', 'ใช้คิดเงินในหน้าสรุปว่าใครโอนให้ใคร · 0 = ไม่คิดเป็นเงิน')}<input id="s_rate" type="number" inputmode="decimal" step="any" min="0" value="${st.chipBaht || 0}"></div>
-        ${lab('⏰ เวลาเล่น (นาที)', 'session', 'นับตั้งแต่มือแรก หมดเวลาแล้วแจ้งทุกเครื่องให้เล่นมือนั้นจบแล้วสรุป · แก้ระหว่างเกมจะเริ่มนับใหม่ · 0 = ไม่จำกัด')}
-        ${timeRow('s_session', st.sessionMin || 0, [[0, 'ปิด'], [60, '1ชม.'], [120, '2ชม.'], [180, '3ชม.']], 'นาที', 'sessionSeg')}
       </div>
       <div id="tourBox" ${st.mode === 'tournament' ? '' : 'hidden'}>
         ${lab('โครงสร้าง Blind', 'levels', 'แต่ละ Level เล่นตามนาทีที่ตั้ง แล้ว Blind ขึ้นเอง · Ante ใส่ 0 = ไม่มี · พิมพ์ BB แล้ว SB เติมให้ครึ่งหนึ่ง')}
@@ -1327,8 +1325,8 @@
         <button class="ghost" style="width:100%;margin-top:8px" data-a="lvAdd">+ เพิ่ม Level</button>
         <div class="lvall"><span>ตั้งทุก Level เป็น</span><input id="lvAllMin" type="number" inputmode="numeric" value="${st.levels[0] ? st.levels[0].min : 3}"><span>นาที</span><button class="sm" data-a="lvAllMin">ใช้</button></div>
       </div>
-      ${midHand ? '<p class="muted small center">เกม / แบบไพ่ เปลี่ยนได้หลังจบมือ</p>' : ''}
-      <button class="primary" style="width:100%;margin-top:12px" data-a="saveSettings">บันทึก</button></div>`];
+      ${midHand ? '<p class="muted small center">เกม / แบบไพ่ เปลี่ยนได้หลังจบมือ</p>' : ''}</div>`,
+      '<button class="primary sm" data-a="saveSettings">บันทึก</button>'];
   }
 
   function levelRow(l, i, current) {
@@ -1546,7 +1544,6 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'raiseRange') { ui.raiseTo = Number(e.target.value); syncRaise(); }
     if (e.target.id === 'raiseInput') { ui.raiseTo = Math.floor(Number(e.target.value) || 0); syncRaise(true); }
-    if (e.target.id === 's_session') markSessionSeg();
     if (e.target.id === 'pdBetInput') { ui.pdDraft = e.target.value; syncPdBet(); }
     const k = e.target.dataset && e.target.dataset.k;
     if (k === 'sb') e.target.dataset.manual = '1';
@@ -1575,10 +1572,6 @@
   }
 
   // highlight the preset matching the minutes box (none for a custom value)
-  function markSessionSeg() {
-    const v = Math.max(0, Math.floor(Number(document.getElementById('s_session').value) || 0));
-    document.querySelectorAll('#sessionSeg button').forEach((b) => b.classList.toggle('on', Number(b.dataset.v) === v));
-  }
 
   // typing: leave the input alone so the cursor doesn't jump while the user types
   document.addEventListener('keydown', (e) => {
@@ -1789,7 +1782,6 @@
       case 'view': ui.view = d.v; store.set('pk:view', d.v); ui.sheet = null; render(); break;
       case 'holeHide': ui.holeHidden = !ui.holeHidden; render(); break;
       case 'creditMode': document.getElementById('s_credit').value = d.v; markCredit(); break;
-      case 'sessionPreset': document.getElementById('s_session').value = d.v; markSessionSeg(); break;
       case 'hostJoin': send({ c: 'join' }); ui.sheet = null; break;
       case 'saveSettings': saveSettings(); break;
       case 'lvAdd': {
@@ -1836,7 +1828,7 @@
     const settings = { mode, startStack: num('s_stack') || 1000, appCards: document.getElementById('s_cards').value === '1', game: document.getElementById('s_game').value,
       actSec: Math.min(600, num('s_actsec')), autoNext: Math.min(600, num('s_autonext')) };
     if (mode === 'cash') {
-      Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: num('s_session'),
+      Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: 0,
         credit: document.getElementById('s_credit').value === '1', chipBaht: Math.max(0, Number(document.getElementById('s_rate').value) || 0) });
       if (!settings.bb || settings.sb > settings.bb) return toast('Blind ไม่ถูกต้อง');
     } else {

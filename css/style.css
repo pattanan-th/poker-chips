@@ -119,7 +119,7 @@ h2 { font-size: 18px; margin: 0 0 8px; }
 /* sheets */
 .sheet-bg { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
 .sheet { background: #0e3327; width: 100%; max-width: 560px; max-height: 88vh; overflow: auto; border-radius: 18px 18px 0 0; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); border: 1px solid var(--line); }
-.sheet .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.sheet .head { display: flex; align-items: center; justify-content: space-between; margin: -16px -16px 8px; padding: 14px 16px 10px; position: sticky; top: -16px; z-index: 2; background: #0e3327; border-bottom: 1px solid var(--line); }
 .menu { display: grid; gap: 8px; }
 .menu button { text-align: left; }
 .prow { border-bottom: 1px solid var(--line); padding: 10px 0; }
