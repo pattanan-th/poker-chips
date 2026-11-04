@@ -965,7 +965,7 @@
     const info = [folded ? `Fold แล้ว${regret ? ` · 😢 <b class="gold">${regret}</b>` : ''}` : made ? `<b class="gold">${made.name}</b>` : '', eq == null ? '' : `ชนะ <b class="gold">${eq === undefined ? '…' : Math.round(eq * 100) + '%'}</b>`].filter(Boolean).join(' · ');
     const showBtn = h.done && !shownMine ? `<button class="sm" data-a="cmd" data-c="show" data-pid="${esc(myId)}">🃏 โชว์ไพ่</button>` : '';
     const cardRow = ui.holeHidden ? cards.map(() => cardHtml(null)).join('') : cards.map((c, i) => cardHtml(c, '', `m${h.no}`, i)).join('');
-    return `<div class="tmycards ${folded ? 'fold' : ''}${cards.length > 2 ? ' four' : ''}" style="left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%">
+    return `<div class="tmycards ${folded ? 'fold' : ''}${regret ? ' regret' : ''}${cards.length > 2 ? ' four' : ''}" style="left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%">
       ${info || showBtn || bet ? `<div class="tinfo">${bet}${info}${showBtn}</div>` : ''}
       <div class="pcs" data-a="holeHide" title="แตะเพื่อซ่อน/ดู">${cardRow}</div></div>`;
   }
@@ -1147,7 +1147,7 @@
     if (h.done && h.shown) {
       const win = Object.keys(h.result || {}).find((id) => h.shown[id]);
       if (win) cards = h.shown[win].cards;
-    } else if (!h.folded[myId]) cards = myHole();
+    } else cards = myHole(); // still lit after folding: the hand you would have had
     const b = cards && Cards.bestFor(cards, h.board, h.game);
     if (!b) return null;
     return { on: new Set(b.made), pool: new Set(cards.concat(h.board)) };
@@ -1194,7 +1194,7 @@
     if (ui.holeHidden) {
       return `<div class="card mycards hidden" data-a="holeHide"><span class="pcs">${cardHtml(null, 'lg')}${cardHtml(null, 'lg')}</span><span class="muted small">ไพ่ของคุณ · แตะเพื่อดู</span></div>`;
     }
-    return `<div class="card mycards ${folded ? 'fold' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg', `m${h.no}`)}
+    return `<div class="card mycards ${folded ? 'fold' : ''}${regretHand(h, cards) ? ' regret' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg', `m${h.no}`)}
       <span class="small"><b>ไพ่ของคุณ</b>${h.game === 'plo' ? ' <span class="muted">(ใช้ 2 ใบ + กลาง 3 ใบ)</span>' : ''}${folded ? ` · Fold แล้ว${regretHand(h, cards) ? `<br>😢 ถ้าไม่หมอบ: <b class="gold">${regretHand(h, cards)}</b>` : ''}` : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}${eqHtml}${showBtn}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
   }
 

@@ -317,6 +317,7 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .tmycards .pc { width: 46px; height: 64px; font-size: 22px; box-shadow: 0 3px 8px rgba(0, 0, 0, .6); }
 .tmycards .pc i { font-size: 20px; }
 .tmycards.fold .pcs { opacity: .45; }
+.mycards.fold.regret .pcs, .tmycards.fold.regret .pcs { opacity: .85; }
 .tmycards.four .pc { width: 38px; height: 54px; font-size: 18px; }
 .tmycards.four .pc i { font-size: 16px; }
 .tlog { width: 100%; font-size: 12px; line-height: 1.35; color: #e8f2ed; cursor: pointer; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
