@@ -444,6 +444,7 @@
     $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : isPD() ? pdTable() : table()}</div>` + (isPD() ? pdBottom() : bottomBar(actor)) + sheet();
     runNames();
     botTick();
+    fitTable();
     window.scrollTo(0, scrollY);
     const ri = ui.typingRaise && document.getElementById('raiseInput');
     if (ri) { ri.focus(); syncRaise(true); }
@@ -627,7 +628,7 @@
     const feed = h ? `<div class="card feed" data-a="sheet" data-v="hands"><div class="muted small">มือที่ ${h.no} · ทุก action ในมือนี้</div>${actionLines(h, (id) => esc((pById(id) || {}).name || '?'))}</div>` : '';
     const awayHtml = away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : '';
     if (ui.view === 'table') {
-      return `${timeUp}${standBanner}${ovalTable(potHtml)}${myCardsPanel()}${awayHtml}
+      return `${timeUp}${standBanner}${feltTable(potHtml)}${awayHtml}
         ${h && h.street === 'showdown' && !h.done ? showdown() : ''}${feed}`;
     }
     return `${timeUp}${standBanner}<p class="center small viewsw"><u data-a="view" data-v="table">🃏 เปลี่ยนเป็นมุมมองโต๊ะ</u></p><div class="card pot">${potHtml}</div>${myCardsPanel()}${hostTools()}
@@ -672,36 +673,88 @@
     });
   }
 
-  // Players around an oval like a real table, me at the bottom; pot, board and menus in the middle.
-  function ovalTable(potHtml) {
+  // Players around a felt like a real table, me at the bottom; pot, board and menus in the middle.
+  // The box is sized to the phone so the table, my cards and the action bar fit on one screen.
+  function tableBox() {
+    const W = Math.min(window.innerWidth, 560) - 24;
+    const top = (document.querySelector('.topbar') || { offsetHeight: 52 }).offsetHeight;
+    const H = Math.round(Math.max(380, Math.min(window.innerHeight - top - (ui.actbarH || 150) - 14, W * 1.9)));
+    return { W, H };
+  }
+
+  // Point at distance d along the seat track, starting at bottom centre and going clockwise.
+  function trackPoint(d, x0, y0, x1, y1) {
+    const w = x1 - x0; const hgt = y1 - y0; const cx = (x0 + x1) / 2;
+    const legs = [[cx, y1, -1, 0, w / 2], [x0, y1, 0, -1, hgt], [x0, y0, 1, 0, w], [x1, y0, 0, 1, hgt], [x1, y1, -1, 0, w / 2]];
+    for (const [sx, sy, dx, dy, len] of legs) {
+      if (d <= len) return [sx + dx * d, sy + dy * d];
+      d -= len;
+    }
+    return [cx, y1];
+  }
+
+  function feltTable(potHtml) {
     const h = S.hand;
+    const { W, H } = tableBox();
     const seated = S.players.filter((p) => !p.left);
     const mine = seated.findIndex((p) => p.id === myId);
     const order = mine > 0 ? seated.slice(mine).concat(seated.slice(0, mine)) : seated;
     const n = order.length;
-    const RX = 38, RY = 41; // seat ellipse, % of the table box
+    // seat centres run along the rail
+    const x0 = 42, x1 = W - 42, y0 = 46, y1 = H - 50;
+    const per = 2 * ((x1 - x0) + (y1 - y0));
+    const pct = (x, y) => `left:${(x / W * 100).toFixed(2)}%;top:${(y / H * 100).toFixed(2)}%`;
+    const cx = W / 2; const cy = H / 2;
     const seats = order.map((p, i) => {
-      const ang = Math.PI / 2 + (i * 2 * Math.PI) / n; // bottom, then clockwise (to the left)
-      const x = 50 + RX * Math.cos(ang); const y = 50 + RY * Math.sin(ang);
+      const [x, y] = trackPoint((i * per) / n, x0, y0, x1, y1);
       const s = seatInfo(p);
-      const bx = 50 + RX * 0.8 * Math.cos(ang); const by = 50 + RY * 0.78 * Math.sin(ang);
-      const shown = h && h.shown && h.shown[p.id];
-      return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
-          <div class="av">${esc(Array.from(p.name.trim())[0] || '?')}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}</div>
+      const shown = h && h.shown && h.shown[p.id] && p.id !== myId ? h.shown[p.id] : null;
+      // bet chips sit between the seat and the middle, clear of the seat's labels
+      const vx = cx - x; const vy = cy - y; const len = Math.hypot(vx, vy) || 1;
+      const reach = Math.abs(vx / len) > 0.7 ? 46 : 80;
+      const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach)}">${fmt(s.betAmt)}</span>` : '';
+      return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="${pct(x, y)}">
+          <div class="av">${esc(Array.from(p.name.trim())[0] || '?')}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
           <div class="snm">${nameHtml(p.name)}</div>
-          <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}</div>
-          ${s.badges.length ? `<div class="sbadges">${s.badges.join('')}</div>` : ''}
+          <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${s.wonAmt ? ` <span class="won">+${fmt(s.wonAmt)}</span>` : ''}</div>
           <div class="sst">${esc(s.status)}${s.clock}</div>
           ${shown ? `<div class="sshown">${cardsHtml(shown.cards, 'sm', `s${h.no}${p.id}`)}${shown.hand ? `<div>${esc(shown.hand)}</div>` : ''}</div>` : ''}
-          ${s.wonAmt ? `<div class="won">+${fmt(s.wonAmt)}</div>` : ''}
-        </div>${s.betAmt ? `<span class="tbet" style="left:${bx.toFixed(1)}%;top:${by.toFixed(1)}%">${fmt(s.betAmt)}</span>` : ''}`;
+        </div>${bet}`;
     }).join('');
-    return `<div class="ptable" style="--seats:${n}"><div class="felt"></div>
+    const meSeat = mine >= 0 ? trackPoint(0, x0, y0, x1, y1) : null;
+    const meP = mine >= 0 ? seatInfo(seated[mine]) : null;
+    return `<div class="ptable" style="height:${H}px"><div class="rail"></div><div class="felt"></div>
       <div class="tcenter"><div class="pot">${potHtml}</div>
-        ${isHost() ? hostTools() : ''}
-        <div class="tlinks"><u data-a="sheet" data-v="hands">📜 ประวัติ</u><u data-a="sheet" data-v="ranks">🏆 อันดับไพ่</u><u data-a="sheet" data-v="menu">☰ เมนู</u><u data-a="view" data-v="list">📋 รายการ</u></div>
-      </div>${seats}</div>`;
+        <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button>`
+          : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>'}<button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button></div>
+      </div>${seats}${meSeat ? myCardsAtSeat(meSeat[0] / W * 100, (meSeat[1] - 80) / H * 100, meP.betAmt) : ''}</div>`;
   }
+
+  // My hole cards in front of my seat, with what I hold, my chance to win and my bet.
+  function myCardsAtSeat(xPct, yPct, myBet) {
+    const h = S.hand; const cards = myHole();
+    const bet = myBet ? `<span class="tbet inline">${fmt(myBet)}</span>` : '';
+    if (!h || !cards) return bet ? `<div class="tmycards" style="left:${xPct.toFixed(2)}%;top:${(yPct + 6).toFixed(2)}%">${bet}</div>` : '';
+    const folded = h.folded[myId];
+    const made = !folded && h.board && h.board.length >= 3 ? Cards.bestFor(cards, h.board, h.game) : null;
+    const eq = folded || h.done || h.street === 'showdown' ? null : winChance(h, cards);
+    const shownMine = h.shown && h.shown[myId];
+    const info = [folded ? 'Fold แล้ว' : made ? `<b class="gold">${made.name}</b>` : '', eq == null ? '' : `ชนะ <b class="gold">${eq === undefined ? '…' : Math.round(eq * 100) + '%'}</b>`].filter(Boolean).join(' · ');
+    const showBtn = h.done && !shownMine ? `<button class="sm" data-a="cmd" data-c="show" data-pid="${esc(myId)}">🃏 โชว์ไพ่</button>` : '';
+    const cardRow = ui.holeHidden ? cards.map(() => cardHtml(null)).join('') : cards.map((c, i) => cardHtml(c, '', `m${h.no}`, i)).join('');
+    return `<div class="tmycards ${folded ? 'fold' : ''}" style="left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%">
+      ${info || showBtn || bet ? `<div class="tinfo">${bet}${info}${showBtn}</div>` : ''}
+      <div class="pcs" data-a="holeHide" title="แตะเพื่อซ่อน/ดู">${cardRow}</div></div>`;
+  }
+
+  // keep the table fitted when the action bar or the screen size changes
+  function fitTable() {
+    if (ui.view !== 'table' || ui.raiseOpen || !document.querySelector('.ptable')) return;
+    const bar = document.querySelector('.actbar');
+    const hgt = bar ? bar.offsetHeight : 0;
+    if (Math.abs(hgt - (ui.actbarH || 150)) > 8) { ui.actbarH = hgt; render(); }
+  }
+  window.addEventListener('resize', () => { if (ui.view === 'table' && document.querySelector('.ptable')) render(); });
 
   function seatInfo(p) {
     const h = S.hand;
