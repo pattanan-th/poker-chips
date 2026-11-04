@@ -13,7 +13,8 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }, // false: private mode or storage full
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
-  const RANDOM_NAMES = ['เจ', 'โจ้', 'จิน', 'แจง', 'เจฟ', 'เจี๊ยบ', 'จอร์จ', 'จอห์น', 'จิ๊บ']; // 🎲 next to the name box
+  const RANDOM_NAMES = ['เจ', 'โจ้', 'จิน', 'แจง', 'เจฟ', 'เจี๊ยบ', 'จอร์จ', 'จอห์น', 'จิ๊บ', // 🎲 next to the name box
+    'จ๋า', 'จุ๊บ', 'จิ๋ว', 'จูน', 'แจ๊ค', 'จั๊ม', 'จ๊ะจ๋า', 'จูเนียร์', 'โจโจ้', 'เจน'];
   const NAME_MAX = 100; // only a guard against junk; long names scroll in the player list
   const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   // ?pid= lets several tabs on one device be different players (testing)
