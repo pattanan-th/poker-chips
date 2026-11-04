@@ -79,6 +79,13 @@
     turn() { tone(659, 0, 0.18, { vol: 0.18 }); tone(880, 0.13, 0.3, { vol: 0.18 }); },
     win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.28, { type: 'triangle', vol: 0.15 })); sounds.chip(5); },
     pot() { sounds.chip(4); },
+    // a clock tick: a dry wooden tick, with a higher second tock and a louder ring over the last 3 seconds
+    tick(sec) {
+      const urgent = sec <= 3;
+      tone(urgent ? 1500 : 1100, 0, 0.04, { type: 'square', vol: urgent ? 0.12 : 0.06 });
+      noise(0, 0.02, { freq: 3500, q: 2, vol: urgent ? 0.2 : 0.1 });
+      if (urgent) tone(2000, 0.12, 0.05, { type: 'square', vol: 0.08 });
+    },
     // big win fanfare: a rising arpeggio, a held chord and a shower of chips
     bigwin() {
       [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.09, 0.3, { type: 'triangle', vol: 0.16 }));

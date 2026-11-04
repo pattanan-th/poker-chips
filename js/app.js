@@ -424,6 +424,18 @@
   const turnEnds = (h) => (S.settings.actSec > 0 && h && !h.done && h.toAct && h.street !== 'showdown' && h.turnAt ? h.turnAt + S.settings.actSec * 1000 : null);
   const nextStarts = (h) => (S.settings.autoNext > 0 && h && h.done && h.doneAt && E.eligible(S).length >= 2 ? h.doneAt + S.settings.autoNext * 1000 : null);
 
+  // Clock ticking for the player whose turn it is: once a second over the last 10 s, faster and higher in the last 3
+  let tickedSec = null;
+  setInterval(() => {
+    const h = S && S.hand; const te = S && !isPD() && h && h.toAct === myId ? turnEnds(h) : null;
+    if (!te) { tickedSec = null; return; }
+    const sec = Math.ceil((te - Date.now()) / 1000);
+    if (sec > 10 || sec < 1 || sec === tickedSec) return;
+    tickedSec = sec;
+    Sfx.play('tick', sec);
+    try { if (sec <= 3 && navigator.vibrate) navigator.vibrate(40); } catch (e) { /* ignore */ }
+  }, 200);
+
   let autoTried = null;
   setInterval(() => {
     if (!isHost() || !S || isPD() || handingOff) return;
