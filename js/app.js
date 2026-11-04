@@ -601,7 +601,7 @@
     const roomParam = (params.get('room') || '').toUpperCase();
     const resume = roomParam && store.get(hostKey(roomParam), null) ? roomParam : null;
     $app.innerHTML = `<div class="wrap">
-      <svg class="chip-logo" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#c0392b"/><circle cx="50" cy="50" r="30" fill="none" stroke="#fff" stroke-width="8" stroke-dasharray="12 10"/><circle cx="50" cy="50" r="18" fill="#c0392b" stroke="#fff" stroke-width="2"/></svg>
+      <img class="chip-logo" src="logo.svg" alt="Kapoke Chip">
       <h1><span class="ttl">Kapoke Chip<small class="ver">${APP_VER}</small></span></h1>
       <p class="center muted">ไพ่จริงบนโต๊ะ · ชิปบนมือถือ · ชิบหายที่คนเล่น</p>
       <div class="card">

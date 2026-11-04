@@ -41,7 +41,7 @@ label { display: block; font-size: 14px; color: var(--muted); margin: 10px 0 4px
 .center { text-align: center; }
 h1 { font-size: 30px; margin: 24px 0 4px; text-align: center; letter-spacing: .5px; }
 h2 { font-size: 18px; margin: 0 0 8px; }
-.chip-logo { width: 64px; height: 64px; display: block; margin: 24px auto 0; }
+.chip-logo { width: 92px; height: 92px; display: block; margin: 24px auto 0; }
 .seg { display: flex; background: #0a2e23; border-radius: 12px; padding: 4px; gap: 4px; }
 .seg button { flex: 1; background: transparent; padding: 9px; }
 .seg button.on { background: var(--gold); color: #1d1600; }
