@@ -1163,11 +1163,11 @@
     if (ui.pre && (ui.pre.no !== h.no || (ui.pre.t === 'check' && st.toCall) || (ui.pre.t === 'call' && st.toCall !== ui.pre.amt))) ui.pre = null;
     const on = (t) => (ui.pre && ui.pre.t === t ? ' on' : '');
     const call = st.toCall ? Math.min(st.toCall, st.stack) : 0;
-    return `<div class="btns prebtns">
-      <button class="danger${on('checkfold')}" data-a="pre" data-t="checkfold">${st.toCall ? 'Fold' : 'Check / Fold'}</button>
-      ${st.toCall ? `<button class="blue${on('call')}" data-a="pre" data-t="call" data-v="${st.toCall}">Call ${fmt(call)}</button>` : `<button class="blue${on('check')}" data-a="pre" data-t="check">Check</button>`}
-      <button class="primary${on('callany')}" data-a="pre" data-t="callany">Call Any</button></div>
-      ${ui.pre ? '<div class="prehint">ถึงตาแล้วแอปกดให้เอง · แตะอีกทีเพื่อยกเลิก</div>' : ''}`;
+    return `<div class="prelabel">${ui.pre ? '✅ เลือกไว้แล้ว — ถึงตาแอปกดให้เอง' : '⏳ กดรอไว้ก่อนได้ · ถึงตาแล้วแอปกดให้'}</div><div class="btns prebtns">
+      <button class="danger${on('checkfold')}" data-a="pre" data-t="checkfold">${on('checkfold') ? '✓ ' : ''}${st.toCall ? 'Fold' : 'Check / Fold'}</button>
+      ${st.toCall ? `<button class="blue${on('call')}" data-a="pre" data-t="call" data-v="${st.toCall}">${on('call') ? '✓ ' : ''}Call ${fmt(call)}</button>` : `<button class="blue${on('check')}" data-a="pre" data-t="check">${on('check') ? '✓ ' : ''}Check</button>`}
+      <button class="primary${on('callany')}" data-a="pre" data-t="callany">${on('callany') ? '✓ ' : ''}Call Any</button></div>
+`;
   }
 
   function actionBar(id) {
