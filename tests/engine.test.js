@@ -299,4 +299,14 @@ test('voidHand refunds everyone', () => {
   assert.deepStrictEqual(s.players.map((p) => p.stack), [1000, 1000, 1000]);
 });
 
-console.log(`\n${passed} passed`);
+
+test('credit (no buy-in) cash play is pot-limit', () => {
+  const s = E.newGame({ sb: 5, bb: 10, mode: 'cash', credit: true, game: 'nlh' });
+  E.addPlayer(s, 'a', 'A'); E.addPlayer(s, 'b', 'B'); E.startHand(s);
+  const id = s.hand.toAct;
+  const cap = E.raiseCap(s, id);
+  assert.ok(cap < 1000, 'cap is a pot-sized number, not the bottomless stack: ' + cap);
+});
+
+console.log(`
+${passed} passed`);

@@ -207,12 +207,15 @@
     findNext(s, h, h.btn);
   }
 
-  // Highest total bet `id` may make this street: the whole stack, or in PLO the pot after calling.
+  // Pot-limit: Omaha, and every game in cash play with no buy-in (stacks there are bottomless, so no-limit makes no sense)
+  const isPotLimit = (s) => (s.hand ? s.hand.game === 'plo' : s.settings.game === 'plo') || isCredit(s);
+
+  // Highest total bet `id` may make this street: the whole stack, or in pot-limit the pot after calling.
   function raiseCap(s, id) {
     const h = s.hand;
     const bet = h.bets[id] || 0;
     const all = bet + player(s, id).stack;
-    if (h.game !== 'plo') return all;
+    if (!isPotLimit(s)) return all;
     const toCall = Math.max(0, h.currentBet - bet);
     return Math.min(all, h.currentBet + potTotal(h) + toCall);
   }
@@ -450,7 +453,7 @@
   const Engine = {
     STREETS, DEFAULT_LEVELS, newGame, addPlayer, removePlayer, movePlayer, startHand, act, award,
     rebuy, setStack, setSitOut, setLeft, tick, setPaused, levelRemainingMs, sessionRemainingMs, blinds, potTotal, computePots,
-    eligible, inHand, streetName, invested, CREDIT, isCredit, chipText, resetStacks, raiseCap, voidHand,
+    eligible, inHand, streetName, invested, CREDIT, isCredit, chipText, resetStacks, raiseCap, isPotLimit, voidHand,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
   else root.Engine = Engine;

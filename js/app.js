@@ -533,7 +533,7 @@
     const minTo = Math.min(h.currentBet + h.minRaise, maxTo);
     const canRaise = maxTo > h.currentBet && !h.noRaise[id] && p.stack > toCall;
     const pot = E.potTotal(h);
-    return { p, bet, toCall, maxTo, minTo, canRaise, pot, isBet: h.currentBet === 0, plo: h.game === 'plo', capped: maxTo < allTo };
+    return { p, bet, toCall, maxTo, minTo, canRaise, pot, isBet: h.currentBet === 0, plo: E.isPotLimit(S), capped: maxTo < allTo };
   }
 
   // ---------- render ----------
