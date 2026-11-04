@@ -103,29 +103,45 @@
 
   function best(cards, game) {
     if (cards.length < 5) return null;
-    let top = null;
+    let top = null; let five = null;
     (function pick(start, chosen) {
       if (chosen.length === 5) {
         const sc = score5(chosen, game);
-        if (!top || compare(sc, top) > 0) top = sc;
+        if (!top || compare(sc, top) > 0) { top = sc; five = chosen; }
         return;
       }
       for (let i = start; i <= cards.length - (5 - chosen.length); i++) pick(i + 1, chosen.concat(cards[i]));
     })(0, []);
-    return { score: top, name: nameOf(top, game) };
+    return { score: top, name: nameOf(top, game), five, made: madeCards(five) };
+  }
+
+  // The cards that make the hand, for highlighting: all five for a straight or flush, the matched
+  // ranks for pairs, trips, full house and quads (no kickers), the top card for a high card.
+  function madeCards(five) {
+    if (!five) return [];
+    const ranks = five.map(rankOf);
+    const flush = five.every((c) => suitOf(c) === suitOf(five[0]));
+    const uniq = [...new Set(ranks)].sort((a, b) => b - a);
+    const straight = uniq.length === 5 && (uniq[0] - uniq[4] === 4 || ['12,3,2,1,0', '12,7,6,5,4'].includes(uniq.join()));
+    if (flush || straight) return five.slice();
+    const count = (r) => ranks.filter((x) => x === r).length;
+    const paired = five.filter((c) => count(rankOf(c)) >= 2);
+    if (paired.length) return paired;
+    return [five.reduce((m, c) => (rankOf(c) > rankOf(m) ? c : m))];
   }
 
   // Omaha: exactly 2 hole cards + exactly 3 board cards
   function bestOmaha(hole, board) {
     if (board.length < 3) return null;
-    let top = null;
+    let top = null; let five = null;
     for (let a = 0; a < hole.length; a++) for (let b = a + 1; b < hole.length; b++) {
       for (let i = 0; i < board.length; i++) for (let j = i + 1; j < board.length; j++) for (let k = j + 1; k < board.length; k++) {
-        const sc = score5([hole[a], hole[b], board[i], board[j], board[k]]);
-        if (!top || compare(sc, top) > 0) top = sc;
+        const pick = [hole[a], hole[b], board[i], board[j], board[k]];
+        const sc = score5(pick);
+        if (!top || compare(sc, top) > 0) { top = sc; five = pick; }
       }
     }
-    return { score: top, name: HAND_NAMES[top[0]] };
+    return { score: top, name: HAND_NAMES[top[0]], five, made: madeCards(five) };
   }
 
   const bestFor = (hole, board, game) => (game === 'plo' ? bestOmaha(hole, board) : best(hole.concat(board), game));

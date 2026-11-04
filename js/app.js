@@ -764,6 +764,7 @@
 
   function table() {
     const h = S.hand;
+    hl = highlightFor(h);
     const pot = h && !h.done ? E.potTotal(h) : 0;
     let potHtml;
     if (!h) potHtml = `<div class="lbl">พร้อมเริ่มมือแรก</div>`;
@@ -1055,11 +1056,26 @@
     const since = t - flipSeen.get(key);
     return since < FLIP_MS ? { cls: ' flip', style: ` style="animation-delay:${-since}ms"` } : { cls: '', style: '' };
   }
+  // The cards that make the hand that matters right now light up and the rest of that hand dims:
+  // my best hand while I'm in it, the winner's once the hand is shown down.
+  let hl = null;
+  function highlightFor(h) {
+    if (!h || !h.appCards || !h.board || h.board.length < 3) return null;
+    let cards = null;
+    if (h.done && h.shown) {
+      const win = Object.keys(h.result || {}).find((id) => h.shown[id]);
+      if (win) cards = h.shown[win].cards;
+    } else if (!h.folded[myId]) cards = myHole();
+    const b = cards && Cards.bestFor(cards, h.board, h.game);
+    if (!b) return null;
+    return { on: new Set(b.made), pool: new Set(cards.concat(h.board)) };
+  }
   function cardHtml(c, size, key, i) {
     if (c == null) return `<span class="pc back ${size || ''}"></span>`;
     const r = Cards.RANKS[Cards.rankOf(c)]; const su = Cards.SUITS[Cards.suitOf(c)];
     const f = key ? flipAttr(`${key}:${c}`, i || 0) : { cls: '', style: '' };
-    return `<span class="pc ${size || ''} ${su === 'h' || su === 'd' ? 'red' : ''}${f.cls}"${f.style}>${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
+    const lit = hl && hl.pool.has(c) ? (hl.on.has(c) ? ' hi' : ' lo') : '';
+    return `<span class="pc ${size || ''} ${su === 'h' || su === 'd' ? 'red' : ''}${f.cls}${lit}"${f.style}>${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
   }
   const cardsHtml = (list, size, key) => `<span class="pcs">${list.map((c, i) => cardHtml(c, size, key, i)).join('')}</span>`;
   function boardHtml(board) {
