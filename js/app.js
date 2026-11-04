@@ -139,7 +139,13 @@
           const name = String(msg.name || 'ผู้เล่น').slice(0, NAME_MAX);
           const p = pById(cid);
           if (!p && S.players.length >= seatLimit()) { net.send(cid, { t: 'full', max: seatLimit() }); setTimeout(() => net.kick(cid), 500); toast(`${name} เข้าไม่ได้ — ${fullMsg()}`); return; }
-          if (!p) { E.addPlayer(S, cid, name); pById(cid).emoji = cleanEmoji(msg.emoji); saveHost(); toast(`${name} เข้าห้องแล้ว`, true); }
+          if (!p) {
+            E.addPlayer(S, cid, name);
+            const np = pById(cid); np.emoji = cleanEmoji(msg.emoji);
+            // a game already under way: they come in watching and sit down when they're ready
+            if (S.handNo > 0 && !isPD()) { np.left = true; np.watching = true; }
+            saveHost(); toast(`${name} ${np.watching ? 'เข้ามาดู' : 'เข้าห้องแล้ว'}`, true);
+          }
           else { if (p.name !== name) p.name = name; if (msg.emoji != null) p.emoji = cleanEmoji(msg.emoji); if (p.leaving === 'gone') p.leaving = null; }
           delete offlineSince[cid];
           broadcast(); render();
@@ -285,6 +291,7 @@
           return;
         }
         if (p) p.leaving = null;
+        if (p && !cmd.v && p.watching) { p.watching = false; p.left = false; p.sitOut = false; S.log.push(`${p.name} นั่งลงเล่น`); return; }
         if (cmd.auto) S.log.push(`${p.name} ${cmd.auto === 'offline' ? 'หลุดการเชื่อมต่อ' : 'ออกจากห้อง'} — ลุกจากโต๊ะให้อัตโนมัติ`);
         return E.setLeft(S, cmd.pid, cmd.v);
       }
@@ -771,12 +778,14 @@
     const lastLog = S.log.slice(-2).map(esc).join('<br>');
     const me = pById(myId);
     const away = S.players.filter((p) => p.left);
-    const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ${chipWord()} ${chips(me)}</span>
+    const standBanner = me && me.left && !me.watching ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ${chipWord()} ${chips(me)}</span>
       <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
     const timeUp = ui.timeUp ? `<div class="banner row"><span>⏰ หมดเวลาเล่นแล้ว — เล่นมือนี้ให้จบแล้วดูว่าใครโอนให้ใคร</span>
       <button class="primary sm" style="flex:none" data-a="sheet" data-v="summary">💸 สรุป</button></div>` : '';
     const feed = h ? `<div class="card feed" data-a="sheet" data-v="hands"><div class="muted small">มือที่ ${h.no} · ทุก action ในมือนี้</div>${actionLines(h, (id) => esc((pById(id) || {}).name || '?'))}</div>` : '';
-    const awayHtml = away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : '';
+    const watchers = away.filter((p) => p.watching); const stood = away.filter((p) => !p.watching);
+    const awayHtml = (stood.length ? `<div class="away"><span>ลุกแล้ว:</span> ${stood.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : '')
+      + (watchers.length ? `<div class="away"><span>👀 ดูอยู่:</span> ${watchers.map((p) => esc(p.name)).join(' · ')}</div>` : '');
     if (ui.view === 'table') {
       return `${timeUp}${standBanner}${feltTable(potHtml)}${awayHtml}
         ${h && h.street === 'showdown' && !h.done ? showdown() : ''}`;
@@ -1102,6 +1111,11 @@
     const h = S.hand;
     if (!h && S.handNo === 0) return '';
     if (actor) return actionBar(actor);
+    const meW = pById(myId);
+    if (meW && meW.watching) {
+      return `<div class="actbar"><div class="in"><div class="sitbar"><span class="muted small">👀 คุณกำลังดูอยู่ · ได้ไพ่ตั้งแต่มือถัดไปหลังนั่ง</span>
+        <button class="primary sitbtn" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">🪑 นั่งเล่น · ${chipWord()} ${chips(meW)}</button></div></div></div>`;
+    }
     let inner = '';
     if (!h || h.done) {
       const me = pById(myId);
