@@ -79,6 +79,8 @@
     turn() { tone(659, 0, 0.18, { vol: 0.18 }); tone(880, 0.13, 0.3, { vol: 0.18 }); },
     win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.28, { type: 'triangle', vol: 0.15 })); sounds.chip(5); },
     pot() { sounds.chip(4); },
+    // one chip dropping onto the winner's stack, a little higher each time
+    land(i) { const f = 2600 + (i || 0) * 120; tone(f, 0, 0.06, { vol: 0.1 }); noise(0, 0.025, { freq: 4800, q: 2, vol: 0.12 }); },
     // a card slapped face up
     flip(n) { for (let i = 0; i < (n || 1); i++) { noise(i * 0.12, 0.09, { freq: 1400, to: 600, q: 0.8, vol: 0.35 }); tone(140, i * 0.12, 0.06, { type: 'triangle', vol: 0.2 }); } },
     join() { tone(523, 0, 0.15, { vol: 0.14 }); tone(784, 0.1, 0.25, { vol: 0.14 }); },

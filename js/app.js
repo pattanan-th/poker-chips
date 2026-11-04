@@ -494,6 +494,7 @@
     runNames();
     botTick();
     fitTable();
+    winFly();
     window.scrollTo(0, scrollY);
     const ri = ui.typingRaise && document.getElementById('raiseInput');
     if (ri) { ri.focus(); syncRaise(true); }
@@ -809,7 +810,7 @@
       const reach = (side ? (dense ? 62 : 50) : 64) * ks;
       // beside the avatar on side seats (the avatar is the top part of the seat), toward the middle elsewhere
       const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach - (side ? 24 * ks : 0))}">${fmt(s.betAmt)}</span>` : '';
-      return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="${pct(x, y)}">
+      return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" data-pid="${esc(p.id)}" style="${pct(x, y)}">
           <div class="av${p.emoji ? ' emo' : ''}">${avatarOf(p)}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
           <div class="snm">${nameHtml(p.name)}</div>
           <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${s.wonAmt ? ` <span class="won">+${fmt(s.wonAmt)}</span>` : ''}</div>
@@ -861,6 +862,51 @@
       <div class="pcs" data-a="holeHide" title="แตะเพื่อซ่อน/ดู">${cardRow}</div></div>`;
   }
 
+  // When a hand ends, chips fly from the pot to each winner, clicking as they land, and the amount
+  // pops up over the winner. The flying chips live outside #app so re-renders don't cut them off.
+  let flown = null;
+  let watched = null; // only hands this phone saw being played, not one already over when it opened
+  function winFly() {
+    const h = S && S.hand;
+    if (h && !h.done) watched = h.no;
+    if (!h || !h.done || h.voided || !h.result || isPD()) return;
+    if (flown === h.no || watched !== h.no) return;
+    flown = h.no;
+    const from = document.querySelector('.tcenter .pot .amt, .card.pot .amt');
+    if (!from) return;
+    const a = from.getBoundingClientRect();
+    const sx = a.left + a.width / 2; const sy = a.top + a.height / 2;
+    const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    Object.entries(h.result).forEach(([id, amt], w) => {
+      const seat = document.querySelector(`[data-pid="${CSS.escape(id)}"] .av, .pl[data-pid="${CSS.escape(id)}"] .stack`);
+      if (!seat) return;
+      const b = seat.getBoundingClientRect();
+      const tx = b.left + b.width / 2; const ty = b.top + b.height / 2;
+      const n = reduce ? 3 : Math.min(10, 4 + Math.floor(Math.log10(Math.max(1, amt)) * 2));
+      for (let i = 0; i < n; i++) {
+        const delay = 250 + w * 350 + i * 70;
+        const c = document.createElement('div');
+        c.className = 'flychip';
+        c.style.left = `${sx + (Math.random() - 0.5) * 24}px`;
+        c.style.top = `${sy + (Math.random() - 0.5) * 12}px`;
+        document.body.appendChild(c);
+        setTimeout(() => {
+          c.style.transform = `translate(${tx - sx}px, ${ty - sy}px) scale(.8)`;
+          c.style.opacity = '1';
+        }, delay);
+        setTimeout(() => { Sfx.play('land', i); c.remove(); }, delay + 620);
+      }
+      setTimeout(() => {
+        const pop = document.createElement('div');
+        pop.className = 'winpop';
+        pop.textContent = `+${fmt(amt)}`;
+        pop.style.left = `${tx}px`; pop.style.top = `${ty - 18}px`;
+        document.body.appendChild(pop);
+        setTimeout(() => pop.remove(), 1600);
+      }, 250 + w * 350 + n * 70 + 450);
+    });
+  }
+
   // keep the table fitted when the action bar or the screen size changes
   function fitTable() {
     if (ui.view !== 'table' || ui.raiseOpen || !document.querySelector('.ptable')) return;
@@ -899,7 +945,7 @@
     const s = seatInfo(p);
     const bet = s.betAmt ? `<span class="bet">${fmt(s.betAmt)}</span>` : '';
     const won = s.wonAmt ? `<div class="won">+${fmt(s.wonAmt)}</div>` : '';
-    return `<div class="pl ${s.cls}">
+    return `<div class="pl ${s.cls}" data-pid="${esc(p.id)}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
       <div class="nm"><b>${p.emoji ? `<span class="pemo">${esc(p.emoji)}</span>` : ''}${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${s.badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(s.status)}${s.clock}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
       <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
