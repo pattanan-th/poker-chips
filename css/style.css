@@ -246,3 +246,6 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 @keyframes flipIn { 0% { transform: perspective(500px) rotateY(90deg) translateY(-6px); filter: brightness(.6); } 60% { transform: perspective(500px) rotateY(-12deg); filter: brightness(1.1); } 100% { transform: none; filter: none; } }
 .pc.flip { animation: flipIn .45s ease-out backwards; }
 @media (prefers-reduced-motion: reduce) { .pc.flip { animation: none; } }
+
+/* current hand: all actions so far */
+.feed { padding: 10px 12px; cursor: pointer; }

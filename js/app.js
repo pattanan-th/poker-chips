@@ -521,7 +521,8 @@
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
       ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : ''}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
-      <div class="lastlog" data-a="sheet" data-v="hands">${lastLog}<br><u>ประวัติรายมือ</u></div>
+      ${h ? `<div class="card feed" data-a="sheet" data-v="hands"><div class="muted small">มือที่ ${h.no} · ทุก action ในมือนี้</div>${actionLines(h, (id) => esc((pById(id) || {}).name || '?'))}</div>` : ''}
+      <div class="lastlog" data-a="sheet" data-v="hands">${h && !h.done ? '' : `${lastLog}<br>`}<u>ประวัติรายมือ</u></div>
       <p class="center small"><u data-a="sheet" data-v="ranks">🏆 อันดับไพ่ (มือไหนชนะ)</u></p>`;
   }
 
@@ -1163,29 +1164,39 @@
       ${money ? '' : '<p class="muted small">ตั้ง "มูลค่าเงินต่อ 1 buy-in" ในตั้งค่า เพื่อให้คำนวณเป็นบาท</p>'}`];
   }
 
+  // every action of a hand, one line per street
+  function actionLines(h, nm) {
+    return E.STREETS.slice(0, 4).map((st) => {
+      const acts = h.actions.filter((a) => a.st === st);
+      if (!acts.length) return '';
+      return `<div class="hst"><b>${E.streetName(st)}</b> ${acts.map((a) => `${a.id ? nm(a.id) + ' ' : 'ทุกคน '}${esc(a.t)}`).join(' · ')}</div>`;
+    }).join('');
+  }
+
   function handsSheet() {
     if (isPD()) return pdRoundsSheet();
     const hs = (S.history || []).slice().reverse();
+    const cur = S.hand && !S.hand.done ? S.hand : null;
+    const live = cur ? `<details class="hand" open><summary><b>มือที่ ${cur.no}</b> · <span class="gold">กำลังเล่น (${E.streetName(cur.street)})</span></summary>
+        <div class="muted small">Blinds ${fmt(cur.blinds.sb)}/${fmt(cur.blinds.bb)}${cur.blinds.ante ? ` ante ${fmt(cur.blinds.ante)}` : ''} · Dealer ${esc((pById(cur.btn) || {}).name || '?')} · Pot ${fmt(E.potTotal(cur))}</div>
+        ${cur.appCards && cur.board && cur.board.length ? `<div class="hst"><b>Board</b> ${cardsHtml(cur.board, 'sm')}</div>` : ''}
+        ${actionLines(cur, (id) => esc((pById(id) || {}).name || '?'))}</details>` : '';
     const signed = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : 'muted'}">${n > 0 ? '+' : ''}${fmt(n)}</span>`;
     const items = hs.map((h, i) => {
       const nm = (id) => esc(h.names[id] || (pById(id) || {}).name || '?');
       const winners = h.ids.filter((id) => h.delta[id] > 0).map((id) => `${nm(id)} ${signed(h.delta[id])}`).join(', ');
       const mine = h.delta[myId] != null ? ` · คุณ ${signed(h.delta[myId])}` : '';
-      const streets = E.STREETS.slice(0, 4).map((st) => {
-        const acts = h.actions.filter((a) => a.st === st);
-        if (!acts.length) return '';
-        return `<div class="hst"><b>${E.streetName(st)}</b> ${acts.map((a) => `${a.id ? nm(a.id) + ' ' : 'ทุกคน '}${esc(a.t)}`).join(' · ')}</div>`;
-      }).join('');
+      const streets = actionLines(h, nm);
       const pots = h.pots.map((p, j) => `${h.pots.length > 1 ? (j ? `Side ${j}` : 'Main') : 'Pot'} ${fmt(p.amount)} → ${p.winners.map(nm).join(' + ')}`).join(' · ');
       const ended = h.street === 'showdown' ? (h.runout ? 'All-in showdown' : 'Showdown') : `จบที่ ${E.streetName(h.street)} (คนอื่น Fold)`;
       const deltas = h.ids.slice().sort((a, b) => h.delta[b] - h.delta[a]).map((id) => `<span>${nm(id)} ${signed(h.delta[id])}</span>`).join('');
-      return `<details class="hand" ${i === 0 ? 'open' : ''}><summary><b>มือที่ ${h.no}</b> · ${winners || '-'}${mine}</summary>
+      return `<details class="hand" ${i === 0 && !cur ? 'open' : ''}><summary><b>มือที่ ${h.no}</b> · ${winners || '-'}${mine}</summary>
         <div class="muted small">Blinds ${fmt(h.blinds.sb)}/${fmt(h.blinds.bb)}${h.blinds.ante ? ` ante ${fmt(h.blinds.ante)}` : ''} · Dealer ${nm(h.btn)} · ${ended}</div>
         ${h.board ? `<div class="hst"><b>Board</b> ${h.board.length ? cardsHtml(h.board, 'sm') : '-'}</div>` : ''}
         ${h.shown ? Object.entries(h.shown).map(([id, x]) => `<div class="hst">${nm(id)} ${cardsHtml(x.cards, 'sm')} ${esc(x.hand)}</div>`).join('') : ''}
         ${streets}<div class="hst"><b>ผล</b> ${pots}</div><div class="hdelta">${deltas}</div></details>`;
     }).join('');
-    return ['ประวัติรายมือ', `${items || '<p class="muted">ยังไม่มีมือที่จบ</p>'}
+    return ['ประวัติรายมือ', `${live}${items || (cur ? '' : '<p class="muted">ยังไม่มีมือที่จบ</p>')}
       <p class="center small" style="margin-top:12px"><u data-a="sheet" data-v="log">ดูบันทึกเหตุการณ์ทั้งหมด</u> <span class="muted">· เก็บ 30 มือล่าสุด</span></p>`];
   }
 
