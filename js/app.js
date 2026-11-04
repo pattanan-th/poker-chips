@@ -1026,20 +1026,20 @@
   function chipRain(reduce) {
     const box = document.createElement('div');
     box.className = 'chiprain';
-    const n = reduce ? 15 : 70;
+    const n = reduce ? 30 : 170;
     for (let i = 0; i < n; i++) {
       const c = document.createElement('i');
-      const dur = 1.3 + Math.random() * 1.2; const delay = Math.random() * 1.1;
+      const dur = 1.3 + Math.random() * 1.2; const delay = Math.random() * 1.9;
       c.style.left = `${Math.random() * 100}%`;
       c.style.animationDuration = `${dur}s`;
       c.style.animationDelay = `${delay}s`;
       c.style.setProperty('--spin', `${(Math.random() * 2 - 1) * 720}deg`);
       c.style.setProperty('--s', (0.7 + Math.random() * 0.7).toFixed(2));
       box.appendChild(c);
-      if (i % 6 === 0) setTimeout(() => Sfx.play('land', i % 12), (delay + dur * 0.9) * 1000);
+      if (i % 9 === 0) setTimeout(() => Sfx.play('land', i % 12), (delay + dur * 0.9) * 1000);
     }
     document.body.appendChild(box);
-    setTimeout(() => box.remove(), 4200);
+    setTimeout(() => box.remove(), 5400);
     try { navigator.vibrate && navigator.vibrate([60, 40, 60, 40, 200]); } catch (e) { /* ignore */ }
   }
   function seatGlow(id) {
