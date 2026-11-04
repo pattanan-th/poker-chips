@@ -66,7 +66,14 @@
       }
     },
     allin() { sounds.chip(7); tone(220, 0.05, 0.35, { type: 'triangle', to: 440, vol: 0.12 }); },
-    check() { [0, 0.11].forEach((at) => { tone(180, at, 0.08, { type: 'triangle', vol: 0.35 }); noise(at, 0.03, { freq: 900, vol: 0.2 }); }); },
+    // two distinct knuckle raps on the table: a sharp click on top of a short, falling wooden thud
+    check() {
+      [0, 0.2].forEach((at) => {
+        tone(260, at, 0.07, { type: 'sine', to: 110, vol: 0.6 });
+        tone(520, at, 0.03, { type: 'triangle', to: 300, vol: 0.25 });
+        noise(at, 0.025, { freq: 1800, q: 1.2, vol: 0.45 });
+      });
+    },
     fold() { noise(0, 0.22, { freq: 3000, to: 400, filter: 'lowpass', vol: 0.25 }); },
     deal(n) { for (let i = 0; i < (n || 1); i++) noise(i * 0.09, 0.06, { freq: 4500, filter: 'highpass', vol: 0.22 }); },
     turn() { tone(659, 0, 0.18, { vol: 0.18 }); tone(880, 0.13, 0.3, { vol: 0.18 }); },
