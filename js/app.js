@@ -461,7 +461,22 @@
     // a state broadcast can arrive while the player is typing a bet; keep their input
     ui.typingRaise = document.activeElement && document.activeElement.id === 'raiseInput';
     const typingPd = document.activeElement && document.activeElement.id === 'pdBetInput';
-    $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : isPD() ? pdTable() : table()}</div>` + (isPD() ? pdBottom() : bottomBar(actor)) + sheet();
+    // The table re-renders on every move (and bots move every second or two). An open settings form
+    // is kept as it is, or the host's half-made choices would be wiped; other sheets keep their scroll.
+    const oldBg = document.querySelector('.sheet-bg');
+    const sameSheet = oldBg && oldBg.dataset.sheet === ui.sheet;
+    const keepForm = sameSheet && ui.sheet === 'settings';
+    const sheetScroll = sameSheet ? oldBg.firstElementChild.scrollTop : 0;
+    const focusId = keepForm && document.activeElement && oldBg.contains(document.activeElement) ? document.activeElement.id : null;
+    $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : isPD() ? pdTable() : table()}</div>` + (isPD() ? pdBottom() : bottomBar(actor)) + (keepForm ? '' : sheet());
+    if (keepForm) {
+      $app.appendChild(oldBg);
+      const f = focusId && document.getElementById(focusId);
+      if (f) f.focus();
+    } else if (sheetScroll) {
+      const sh = document.querySelector('.sheet-bg .sheet');
+      if (sh) sh.scrollTop = sheetScroll;
+    }
     runNames();
     botTick();
     fitTable();
@@ -1174,7 +1189,7 @@
     const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet, ranks: ranksSheet }[ui.sheet];
     if (!body) return '';
     const [title, html] = body();
-    return `<div class="sheet-bg" data-a="closeSheet"><div class="sheet" data-stop="1">
+    return `<div class="sheet-bg" data-a="closeSheet" data-sheet="${ui.sheet}"><div class="sheet" data-stop="1">
       <div class="head"><h2 style="margin:0">${title}</h2><button class="sm ghost" data-a="closeSheet">ปิด</button></div>${html}</div></div>`;
   }
 
