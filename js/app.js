@@ -104,6 +104,7 @@
           S.removed = (S.removed || []).filter((x) => x !== cid);
           const name = String(msg.name || 'ผู้เล่น').slice(0, NAME_MAX);
           const p = pById(cid);
+          if (!p && S.players.length >= seatLimit()) { net.send(cid, { t: 'full', max: seatLimit() }); setTimeout(() => net.kick(cid), 500); toast(`${name} เข้าไม่ได้ — ${fullMsg()}`); return; }
           if (!p) { E.addPlayer(S, cid, name); saveHost(); toast(`${name} เข้าห้องแล้ว`, true); }
           else if (p.name !== name) p.name = name;
           broadcast(); render();
@@ -162,6 +163,14 @@
     const x = isHost() ? holeFor(myId) : ui.hole;
     return x && x.no === h.no ? x.cards : null;
   }
+
+  // Seats per room, so a deal never runs out of cards. Hold'em: 2 each + 5 board + 3 burns fits 22,
+  // but a table seats 10. Omaha: 4 each + 8 → 11. Pok Deng: up to 3 each, banker included → 17.
+  function seatLimit(game) {
+    if (isPD()) return 17;
+    return (game || S.settings.game) === 'plo' ? 11 : 10;
+  }
+  const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
   const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename', 'pdBet', 'show'];
   // Pok Deng: the banker runs the round from their own phone too
@@ -239,9 +248,12 @@
         return;
       case 'move': return E.movePlayer(S, cmd.pid, cmd.dir);
       case 'rename': { const p = pById(cmd.pid); if (p) p.name = String(cmd.name).slice(0, NAME_MAX); return; }
-      case 'join': return E.addPlayer(S, myId, myName);
+      case 'join':
+        if (!pById(myId) && S.players.length >= seatLimit()) throw new Error(fullMsg());
+        return E.addPlayer(S, myId, myName);
       case 'addBot': {
         if (isPD()) throw new Error('ป๊อกเด้งยังไม่มีบอท');
+        if (S.players.length >= seatLimit()) throw new Error(fullMsg());
         if (!S.settings.appCards) {
           if (S.hand && !S.hand.done) throw new Error('บอทต้องใช้โหมดแอปแจกไพ่ — เพิ่มได้หลังจบมือ');
           S.settings.appCards = true; // a bot can't hold physical cards
@@ -263,6 +275,7 @@
         const old = S.settings;
         if (S.hand && !S.hand.done && cmd.settings.game != null && cmd.settings.game !== (old.game || 'nlh')) throw new Error('เปลี่ยนเกมได้หลังจบมือ');
         if (S.hand && !S.hand.done && cmd.settings.appCards != null && !!cmd.settings.appCards !== !!old.appCards) throw new Error('เปลี่ยนแบบไพ่ได้หลังจบมือ');
+        if (cmd.settings.game && cmd.settings.game !== old.game && S.players.length > seatLimit(cmd.settings.game)) throw new Error(`${cmd.settings.game === 'plo' ? 'Omaha' : "Texas Hold'em"} เล่นได้สูงสุด ${seatLimit(cmd.settings.game)} คน — ตอนนี้มี ${S.players.length} คน`);
         if (cmd.settings.appCards === false && S.players.some((p) => p.bot)) throw new Error('บอทเล่นได้เฉพาะโหมดแอปแจกไพ่ — ลบบอทออกก่อน');
         S.settings = Object.assign({}, old, cmd.settings);
         if (S.handNo > 0) S.settings.credit = !!old.credit; // can't switch buy-in style mid-game
@@ -311,6 +324,8 @@
           toast(msg.msg);
         } else if (msg.t === 'kicked') {
           kicked = true; render();
+        } else if (msg.t === 'full') {
+          kicked = 'full'; ui.fullMax = msg.max; net.destroy(); render(); // stop retrying until they tap again
         }
       },
     });
@@ -524,6 +539,12 @@
   }
 
   function renderKicked() {
+    if (kicked === 'full') {
+      $app.innerHTML = `<div class="wrap"><div class="card center"><h2>ห้องเต็มแล้ว</h2>
+        <p class="muted">ห้องนี้รับได้สูงสุด ${ui.fullMax || ''} คน ตามจำนวนไพ่ในสำรับ · ถ้ามีคนออก กดลองใหม่ได้</p>
+        <button class="primary" data-a="rejoin">ลองเข้าอีกครั้ง</button></div></div>`;
+      return;
+    }
     $app.innerHTML = `<div class="wrap"><div class="card center"><h2>คุณถูกนำออกจากโต๊ะ</h2>
       <p class="muted">ถ้าเป็นการกดผิด กดปุ่มด้านล่างเพื่อขอกลับเข้าห้อง</p>
       <button class="primary" data-a="rejoin">กลับเข้าห้อง</button></div></div>`;
@@ -564,7 +585,7 @@
       <div class="link">${esc(joinUrl())}</div>
     </div>
     <div class="card">
-      <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${S.settings.game === 'plo' ? 'PLO · ' : ''}${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
+      <h2>ผู้เล่น (${S.players.length}/${seatLimit()}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${S.settings.game === 'plo' ? 'PLO · ' : ''}${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
       <div class="players">${list || '<p class="muted">ยังไม่มีผู้เล่น</p>'}</div>
       ${isHost() ? `<p class="muted small">${isPD() ? 'คนแรกในรายการเป็นเจ้ามือป๊อกเด้ง (🏦) เปลี่ยนได้ทีหลัง' : 'เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)'}</p>
         ${isPD() ? '' : '<button class="ghost" style="width:100%;margin-bottom:8px" data-a="cmd" data-c="addBot">🤖 เพิ่มบอท (เล่นคนเดียว / ทดสอบ)</button>'}
@@ -719,7 +740,7 @@
       // bet chips sit between the seat and the middle, clear of the seat's labels
       const vx = cx - x; const vy = cy - y; const len = Math.hypot(vx, vy) || 1;
       const side = Math.abs(vx / len) > 0.7;
-      const reach = (side ? 50 : 80) * k;
+      const reach = (side ? 50 : 64) * k;
       // beside the avatar on side seats (the avatar is the top part of the seat), toward the middle elsewhere
       const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach - (side ? 24 * k : 0))}">${fmt(s.betAmt)}</span>` : '';
       return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="${pct(x, y)}">
@@ -736,7 +757,7 @@
       <div class="tcenter"><div class="pot">${potHtml}</div>
         <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button>`
           : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>'}<button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button></div>
-        ${tableLog(h, H > 600 ? 5 : H > 470 ? 4 : 3)}
+        ${tableLog(h, H > 620 ? 5 : H > 560 ? 4 : H > 480 ? 3 : 2)}
       </div>${seats}${meSeat ? myCardsAtSeat(meSeat[0] / W * 100, (meSeat[1] - 80 * k) / H * 100, meP.betAmt) : ''}</div>`;
   }
 
@@ -769,7 +790,7 @@
     const info = [folded ? 'Fold แล้ว' : made ? `<b class="gold">${made.name}</b>` : '', eq == null ? '' : `ชนะ <b class="gold">${eq === undefined ? '…' : Math.round(eq * 100) + '%'}</b>`].filter(Boolean).join(' · ');
     const showBtn = h.done && !shownMine ? `<button class="sm" data-a="cmd" data-c="show" data-pid="${esc(myId)}">🃏 โชว์ไพ่</button>` : '';
     const cardRow = ui.holeHidden ? cards.map(() => cardHtml(null)).join('') : cards.map((c, i) => cardHtml(c, '', `m${h.no}`, i)).join('');
-    return `<div class="tmycards ${folded ? 'fold' : ''}" style="left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%">
+    return `<div class="tmycards ${folded ? 'fold' : ''}${cards.length > 2 ? ' four' : ''}" style="left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%">
       ${info || showBtn || bet ? `<div class="tinfo">${bet}${info}${showBtn}</div>` : ''}
       <div class="pcs" data-a="holeHide" title="แตะเพื่อซ่อน/ดู">${cardRow}</div></div>`;
   }
