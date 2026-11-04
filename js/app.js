@@ -15,8 +15,7 @@
   };
   // the release number is the ?v=N on the script tags, so there's nothing extra to bump
   const APP_VER = (() => { const s = document.currentScript || document.querySelector('script[src*="app.js"]'); const m = s && /[?&]v=(\d+)/.exec(s.src); return m ? `v${m[1]}` : ''; })();
-  const RANDOM_NAMES = ['เจ', 'โจ้', 'จิน', 'แจง', 'เจฟ', 'เจี๊ยบ', 'จอร์จ', 'จอห์น', 'จิ๊บ', // 🎲 next to the name box
-    'จ๋า', 'จุ๊บ', 'จิ๋ว', 'จูน', 'แจ๊ค', 'จั๊ม', 'จ๊ะจ๋า', 'จูเนียร์', 'โจโจ้', 'เจน'];
+  const RANDOM_NAMES = ['เจ', 'โจ้', 'จิน', 'เจเจ', 'โจโจ้', 'แจง', 'เจฟ']; // 🎲 next to the name box
   const NAME_MAX = 100; // only a guard against junk; long names scroll in the player list
   const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   // ?pid= lets several tabs on one device be different players (testing)
