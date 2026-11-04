@@ -336,10 +336,15 @@
   function stampClock(reset) {
     const h = S && S.hand;
     if (!h) return;
+    const t = Date.now();
+    h.actions.forEach((a) => { if (!a.at) a.at = t; }); // when each action happened (host clock)
     const key = `${h.toAct}|${h.actions.length}|${h.street}`;
     if (!h.done && (reset || h.turnKey !== key)) { h.turnKey = key; h.turnAt = Date.now(); }
     if (h.done && (reset || !h.doneAt)) h.doneAt = Date.now();
   }
+  // host time → this phone's clock, shown as 21:14:05
+  const clockAt = (at) => (at ? new Date(at - clockSkew).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '');
+  const tmHtml = (at) => (at ? `<span class="tm">${clockAt(at)}</span>` : '');
   const turnEnds = (h) => (S.settings.actSec > 0 && h && !h.done && h.toAct && h.street !== 'showdown' && h.turnAt ? h.turnAt + S.settings.actSec * 1000 : null);
   const nextStarts = (h) => (S.settings.autoNext > 0 && h && h.done && h.doneAt && E.eligible(S).length >= 2 ? h.doneAt + S.settings.autoNext * 1000 : null);
 
@@ -743,9 +748,9 @@
     let st = null;
     h.actions.forEach((a) => {
       if (a.st !== st) { if (st) lines.push(`<i>— ${E.streetName(a.st)} —</i>`); st = a.st; }
-      lines.push(`${a.id ? `<b>${nm(a.id)}</b> ` : ''}${esc(a.t)}`);
+      lines.push(`${tmHtml(a.at)}${a.id ? `<b>${nm(a.id)}</b> ` : ''}${esc(a.t)}`);
     });
-    if (h.done && !h.voided) Object.entries(h.result || {}).forEach(([id, amt]) => lines.push(`🏆 <b>${nm(id)}</b> ได้ ${fmt(amt)}`));
+    if (h.done && !h.voided) Object.entries(h.result || {}).forEach(([id, amt]) => lines.push(`${tmHtml(h.doneAt)}🏆 <b>${nm(id)}</b> ได้ ${fmt(amt)}`));
     const recent = lines.slice(-max).reverse();
     const fade = [1, 0.62, 0.42, 0.28, 0.18];
     return `<div class="tlog" data-a="sheet" data-v="hands">${recent.map((l, i) => `<div style="opacity:${fade[i] || 0.15}">${l}</div>`).join('')}
@@ -1408,7 +1413,7 @@
     return E.STREETS.slice(0, 4).map((st) => {
       const acts = h.actions.filter((a) => a.st === st);
       if (!acts.length) return '';
-      return `<div class="hst"><b>${E.streetName(st)}</b> ${acts.map((a) => `${a.id ? nm(a.id) + ' ' : 'ทุกคน '}${esc(a.t)}`).join(' · ')}</div>`;
+      return `<div class="hst"><b>${E.streetName(st)}</b> ${acts.map((a) => `${a.id ? nm(a.id) + ' ' : 'ทุกคน '}${esc(a.t)}${a.at ? ` <span class="tm">${clockAt(a.at)}</span>` : ''}`).join(' · ')}</div>`;
     }).join('');
   }
 
@@ -1416,7 +1421,7 @@
     if (isPD()) return pdRoundsSheet();
     const hs = (S.history || []).slice().reverse();
     const cur = S.hand && !S.hand.done ? S.hand : null;
-    const live = cur ? `<details class="hand" open><summary><b>มือที่ ${cur.no}</b> · <span class="gold">กำลังเล่น (${E.streetName(cur.street)})</span></summary>
+    const live = cur ? `<details class="hand" open><summary><b>มือที่ ${cur.no}</b>${cur.actions[0] && cur.actions[0].at ? ` <span class="tm">${clockAt(cur.actions[0].at)}</span>` : ''} · <span class="gold">กำลังเล่น (${E.streetName(cur.street)})</span></summary>
         <div class="muted small">Blinds ${fmt(cur.blinds.sb)}/${fmt(cur.blinds.bb)}${cur.blinds.ante ? ` ante ${fmt(cur.blinds.ante)}` : ''} · Dealer ${esc((pById(cur.btn) || {}).name || '?')} · Pot ${fmt(E.potTotal(cur))}</div>
         ${cur.appCards && cur.board && cur.board.length ? `<div class="hst"><b>Board</b> ${cardsHtml(cur.board, 'sm')}</div>` : ''}
         ${actionLines(cur, (id) => esc((pById(id) || {}).name || '?'))}</details>` : '';
@@ -1429,7 +1434,7 @@
       const pots = h.pots.map((p, j) => `${h.pots.length > 1 ? (j ? `Side ${j}` : 'Main') : 'Pot'} ${fmt(p.amount)} → ${p.winners.map(nm).join(' + ')}`).join(' · ');
       const ended = h.street === 'showdown' ? (h.runout ? 'All-in showdown' : 'Showdown') : `จบที่ ${E.streetName(h.street)} (คนอื่น Fold)`;
       const deltas = h.ids.slice().sort((a, b) => h.delta[b] - h.delta[a]).map((id) => `<span>${nm(id)} ${signed(h.delta[id])}</span>`).join('');
-      return `<details class="hand" ${i === 0 && !cur ? 'open' : ''}><summary><b>มือที่ ${h.no}</b> · ${winners || '-'}${mine}</summary>
+      return `<details class="hand" ${i === 0 && !cur ? 'open' : ''}><summary><b>มือที่ ${h.no}</b>${h.actions[0] && h.actions[0].at ? ` <span class="tm">${clockAt(h.actions[0].at)}</span>` : ''} · ${winners || '-'}${mine}</summary>
         <div class="muted small">Blinds ${fmt(h.blinds.sb)}/${fmt(h.blinds.bb)}${h.blinds.ante ? ` ante ${fmt(h.blinds.ante)}` : ''} · Dealer ${nm(h.btn)} · ${ended}</div>
         ${h.board ? `<div class="hst"><b>Board</b> ${h.board.length ? cardsHtml(h.board, 'sm') : '-'}</div>` : ''}
         ${h.shown ? Object.entries(h.shown).map(([id, x]) => `<div class="hst">${nm(id)} ${cardsHtml(x.cards, 'sm')} ${esc(x.hand)}</div>`).join('') : ''}
