@@ -444,8 +444,8 @@
   function awayTick(h, t) {
     const live = h && !h.done;
     for (const p of S.players) {
-      if (p.bot || p.id === myId || p.left) { delete offlineSince[p.id]; continue; }
-      if (online.has(p.id)) delete offlineSince[p.id];
+      if (p.bot || p.left) { delete offlineSince[p.id]; continue; }
+      if (online.has(p.id) || p.id === myId) delete offlineSince[p.id]; // the host is never "offline" to itself
       else if (!offlineSince[p.id]) offlineSince[p.id] = t;
       const dropped = offlineSince[p.id] && t - offlineSince[p.id] >= OFFLINE_S * 1000;
       const gone = p.leaving === 'gone' || dropped;
@@ -1456,6 +1456,7 @@
 
   // ---------- sheets ----------
   function sheet() {
+    hl = null; // the table's card highlight is for the hand in play, not the cards in a sheet
     if (!ui.sheet) return '';
     const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet, ranks: ranksSheet, avatar: avatarSheet }[ui.sheet];
     if (!body) return '';
