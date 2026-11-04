@@ -1616,7 +1616,7 @@
       </div>
       <div id="stackBox" ${st.mode === 'cash' && st.credit ? 'hidden' : ''}>${lab('ชิปเริ่มต้น', 'stack', 'ชิปที่แต่ละคนได้ตอนเริ่ม และต่อ 1 Rebuy · แก้ระหว่างเกมมีผลกับ Rebuy ครั้งต่อไป')}<input id="s_stack" type="number" inputmode="numeric" value="${st.startStack}"></div>
       <div id="cashBox" ${st.mode === 'cash' ? '' : 'hidden'}>
-        ${lab('Blinds', 'blinds', 'SB / BB / Ante (Ante = ทุกคนจ่ายก่อนแจกไพ่ ใส่ 0 = ไม่มี) · เปลี่ยนแล้วมีผลตั้งแต่มือถัดไป')}
+        ${lab('Blinds', 'blinds', 'SB / BB / Ante · ใส่ SB หรือ BB อย่างใดอย่างหนึ่ง อีกฝั่งคิดให้เอง (BB = 2 × SB) แก้ทับได้ · Ante = ทุกคนจ่ายก่อนแจกไพ่ ใส่ 0 = ไม่มี · เปลี่ยนแล้วมีผลตั้งแต่มือถัดไป')}
         <div class="grid3"><input id="s_sb" type="number" inputmode="numeric" value="${st.sb}" placeholder="SB" aria-label="SB"><input id="s_bb" type="number" inputmode="numeric" value="${st.bb}" placeholder="BB" aria-label="BB"><input id="s_ante" type="number" inputmode="numeric" value="${st.ante || 0}" placeholder="Ante" aria-label="Ante"></div>
         <div class="grid3 sub"><span>SB</span><span>BB</span><span>Ante</span></div>
         <div id="moneyBuyIn" ${st.credit ? 'hidden' : ''}>${lab('บาท / 1 buy-in', 'money', 'ใช้คิดเงินในหน้าสรุปว่าใครโอนให้ใคร · 0 = ไม่คิดเป็นเงิน')}<input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}"></div>
@@ -1851,10 +1851,14 @@
     if (e.target.id === 'pdBetInput') { ui.pdDraft = e.target.value; syncPdBet(); }
     if (e.target.id === 'emojiIn') { const v = cleanEmoji(e.target.value); e.target.classList.toggle('on', !!v); setEmoji(v); }
     const k = e.target.dataset && e.target.dataset.k;
-    if (k === 'sb') e.target.dataset.manual = '1';
-    if (k === 'bb') {
-      const sb = e.target.closest('.lvrow').querySelector('[data-k=sb]');
-      if (!sb.dataset.manual) sb.value = Math.floor((Number(e.target.value) || 0) / 2);
+    // blinds: type one side and the other is worked out (BB = 2 × SB); the other can still be overwritten
+    const twin = (id, val) => { const o = document.getElementById(id); if (o) o.value = val; };
+    if (e.target.id === 's_sb') twin('s_bb', (Math.floor(Number(e.target.value)) || 0) * 2);
+    if (e.target.id === 's_bb') twin('s_sb', Math.floor((Number(e.target.value) || 0) / 2));
+    if (k === 'sb' || k === 'bb') {
+      const row = e.target.closest('.lvrow');
+      if (k === 'sb') row.querySelector('[data-k=bb]').value = (Math.floor(Number(e.target.value)) || 0) * 2;
+      else row.querySelector('[data-k=sb]').value = Math.floor((Number(e.target.value) || 0) / 2);
     }
   });
   document.addEventListener('change', (e) => {
