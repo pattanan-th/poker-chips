@@ -31,7 +31,7 @@
   let clockSkew = 0;      // client: host time - local time
   let kicked = false;
   let hostLostAt = null;  // client: when the connection to the host dropped
-  const ui = { raiseOpen: false, raiseTo: 0, sheet: null, proxy: false, sd: null, sdHand: 0, wasMyTurn: false };
+  const ui = { view: store.get('pk:view', 'table'), raiseOpen: false, raiseTo: 0, sheet: null, proxy: false, sd: null, sdHand: 0, wasMyTurn: false };
 
   const fmt = (n) => Number(n || 0).toLocaleString('en-US');
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -624,11 +624,17 @@
       <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
     const timeUp = ui.timeUp ? `<div class="banner row"><span>⏰ หมดเวลาเล่นแล้ว — เล่นมือนี้ให้จบแล้วดูว่าใครโอนให้ใคร</span>
       <button class="primary sm" style="flex:none" data-a="sheet" data-v="summary">💸 สรุป</button></div>` : '';
-    return `${timeUp}${standBanner}<div class="card pot">${potHtml}</div>${myCardsPanel()}${hostTools()}
+    const feed = h ? `<div class="card feed" data-a="sheet" data-v="hands"><div class="muted small">มือที่ ${h.no} · ทุก action ในมือนี้</div>${actionLines(h, (id) => esc((pById(id) || {}).name || '?'))}</div>` : '';
+    const awayHtml = away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : '';
+    if (ui.view === 'table') {
+      return `${timeUp}${standBanner}${ovalTable(potHtml)}${myCardsPanel()}${awayHtml}
+        ${h && h.street === 'showdown' && !h.done ? showdown() : ''}${feed}`;
+    }
+    return `${timeUp}${standBanner}<p class="center small viewsw"><u data-a="view" data-v="table">🃏 เปลี่ยนเป็นมุมมองโต๊ะ</u></p><div class="card pot">${potHtml}</div>${myCardsPanel()}${hostTools()}
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
-      ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : ''}
+      ${awayHtml}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
-      ${h ? `<div class="card feed" data-a="sheet" data-v="hands"><div class="muted small">มือที่ ${h.no} · ทุก action ในมือนี้</div>${actionLines(h, (id) => esc((pById(id) || {}).name || '?'))}</div>` : ''}
+      ${feed}
       <div class="lastlog" data-a="sheet" data-v="hands">${h && !h.done ? '' : `${lastLog}<br>`}<u>ประวัติรายมือ</u></div>
       <p class="center small"><u data-a="sheet" data-v="ranks">🏆 อันดับไพ่ (มือไหนชนะ)</u></p>`;
   }
@@ -641,8 +647,8 @@
     const paused = S.pausedAt != null;
     const pause = `<button data-a="cmd" data-c="pause" data-v="${paused ? '' : '1'}" ${S.levelStart == null ? 'disabled' : ''}>${paused ? '▶️<span>เดินเวลา</span>' : '⏸️<span>หยุดเวลา</span>'}</button>`;
     return `<div class="hosttools" style="grid-template-columns:repeat(${clock && !tour ? 5 : 4},1fr)">
-      <button data-a="cmd" data-c="undo" ${hist.length ? '' : 'disabled'}>↩️<span>Undo</span></button>
-      <button data-a="sheet" data-v="players">👥<span>ผู้เล่น/ชิป</span></button>
+      <button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️<span>Undo</span></button>
+      <button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥<span>ผู้เล่น/ชิป</span></button>
       ${tour ? pause : `<button data-a="sheet" data-v="settings">⚙️<span>Blinds</span></button>${clock ? pause : ''}`}
       <button data-a="sheet" data-v="summary">📊<span>สรุป</span></button>
     </div>`;
@@ -666,7 +672,38 @@
     });
   }
 
-  function playerRow(p) {
+  // Players around an oval like a real table, me at the bottom; pot, board and menus in the middle.
+  function ovalTable(potHtml) {
+    const h = S.hand;
+    const seated = S.players.filter((p) => !p.left);
+    const mine = seated.findIndex((p) => p.id === myId);
+    const order = mine > 0 ? seated.slice(mine).concat(seated.slice(0, mine)) : seated;
+    const n = order.length;
+    const RX = 38, RY = 41; // seat ellipse, % of the table box
+    const seats = order.map((p, i) => {
+      const ang = Math.PI / 2 + (i * 2 * Math.PI) / n; // bottom, then clockwise (to the left)
+      const x = 50 + RX * Math.cos(ang); const y = 50 + RY * Math.sin(ang);
+      const s = seatInfo(p);
+      const bx = 50 + RX * 0.8 * Math.cos(ang); const by = 50 + RY * 0.78 * Math.sin(ang);
+      const shown = h && h.shown && h.shown[p.id];
+      return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
+          <div class="av">${esc(Array.from(p.name.trim())[0] || '?')}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}</div>
+          <div class="snm">${nameHtml(p.name)}</div>
+          <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}</div>
+          ${s.badges.length ? `<div class="sbadges">${s.badges.join('')}</div>` : ''}
+          <div class="sst">${esc(s.status)}${s.clock}</div>
+          ${shown ? `<div class="sshown">${cardsHtml(shown.cards, 'sm', `s${h.no}${p.id}`)}${shown.hand ? `<div>${esc(shown.hand)}</div>` : ''}</div>` : ''}
+          ${s.wonAmt ? `<div class="won">+${fmt(s.wonAmt)}</div>` : ''}
+        </div>${s.betAmt ? `<span class="tbet" style="left:${bx.toFixed(1)}%;top:${by.toFixed(1)}%">${fmt(s.betAmt)}</span>` : ''}`;
+    }).join('');
+    return `<div class="ptable" style="--seats:${n}"><div class="felt"></div>
+      <div class="tcenter"><div class="pot">${potHtml}</div>
+        ${isHost() ? hostTools() : ''}
+        <div class="tlinks"><u data-a="sheet" data-v="hands">📜 ประวัติ</u><u data-a="sheet" data-v="ranks">🏆 อันดับไพ่</u><u data-a="sheet" data-v="menu">☰ เมนู</u><u data-a="view" data-v="list">📋 รายการ</u></div>
+      </div>${seats}</div>`;
+  }
+
+  function seatInfo(p) {
     const h = S.hand;
     const live = h && !h.done;
     const inH = h && h.ids.includes(p.id);
@@ -678,20 +715,26 @@
       if (live && h.allIn[p.id]) badges.push('<span class="badge ai">ALL-IN</span>');
     } else if (!h && S.buttonId === p.id) badges.push('<span class="badge d">D</span>');
     let status = '';
-    let cls = 'pl';
-    if (p.out) { status = S.settings.mode === 'tournament' ? `ตกรอบ (ที่ ${S.players.length - S.finishOrder.indexOf(p.id)})` : 'ชิปหมด'; cls += ' idle'; }
-    else if (p.sitOut) { status = 'พักโต๊ะ'; cls += ' idle'; }
-    else if (live && !inH) { status = 'รอมือถัดไป'; cls += ' idle'; }
-    else if (live && h.folded[p.id]) { status = 'Fold'; cls += ' fold'; }
-    else if (live && h.toAct === p.id) { status = 'กำลังคิด…'; cls += ' turn'; }
+    let cls = '';
+    if (p.out) { status = S.settings.mode === 'tournament' ? `ตกรอบ (ที่ ${S.players.length - S.finishOrder.indexOf(p.id)})` : 'ชิปหมด'; cls = 'idle'; }
+    else if (p.sitOut) { status = 'พักโต๊ะ'; cls = 'idle'; }
+    else if (live && !inH) { status = 'รอมือถัดไป'; cls = 'idle'; }
+    else if (live && h.folded[p.id]) { status = 'Fold'; cls = 'fold'; }
+    else if (live && h.toAct === p.id) { status = 'กำลังคิด…'; cls = 'turn'; }
     else if (live && h.lastAct[p.id]) status = h.lastAct[p.id];
     const clock = live && h.toAct === p.id && turnEnds(h) ? ` <span class="tclock">⏱ ${cdHtml(turnEnds(h))}</span>` : '';
     if (!p.out && p.stack === 0 && !(live && inH)) status = S.settings.mode === 'cash' ? 'ชิปหมด — Rebuy?' : status;
-    const bet = live && h.bets[p.id] ? `<span class="bet">${fmt(h.bets[p.id])}</span>` : '';
-    const won = h && h.done && h.result && h.result[p.id] ? `<div class="won">+${fmt(h.result[p.id])}</div>` : '';
-    return `<div class="${cls}">
+    return { badges, status, cls, clock, betAmt: live ? h.bets[p.id] || 0 : 0, wonAmt: h && h.done && h.result ? h.result[p.id] || 0 : 0 };
+  }
+
+  function playerRow(p) {
+    const h = S.hand;
+    const s = seatInfo(p);
+    const bet = s.betAmt ? `<span class="bet">${fmt(s.betAmt)}</span>` : '';
+    const won = s.wonAmt ? `<div class="won">+${fmt(s.wonAmt)}</div>` : '';
+    return `<div class="pl ${s.cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}${clock}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
+      <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${s.badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(s.status)}${s.clock}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
       <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
@@ -1042,6 +1085,7 @@
         <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
         <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
         <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
+        <button data-a="view" data-v="${ui.view === 'table' ? 'list' : 'table'}">${ui.view === 'table' ? '📋 เปลี่ยนเป็นมุมมองรายการ' : '🃏 เปลี่ยนเป็นมุมมองโต๊ะ'}</button>
         ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
         <button data-a="rename">✏️ เปลี่ยนชื่อ</button>` : ''}
         <button class="ghost" data-a="leave">ออกจากห้อง</button></div>`];
@@ -1059,6 +1103,7 @@
       <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
       <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
       <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
+        <button data-a="view" data-v="${ui.view === 'table' ? 'list' : 'table'}">${ui.view === 'table' ? '📋 เปลี่ยนเป็นมุมมองรายการ' : '🃏 เปลี่ยนเป็นมุมมองโต๊ะ'}</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
       <button data-a="goHome">🏠 กลับหน้าแรก (เก็บห้องไว้)</button>
       <button class="danger" data-a="endRoom">ปิดห้อง (ลบเกมนี้)</button>
@@ -1613,6 +1658,7 @@
         document.getElementById('cardsHint').hidden = d.v !== '1';
         break;
       case 'mute': Sfx.setMuted(!Sfx.isMuted()); render(); break;
+      case 'view': ui.view = d.v; store.set('pk:view', d.v); ui.sheet = null; render(); break;
       case 'holeHide': ui.holeHidden = !ui.holeHidden; render(); break;
       case 'creditMode': document.getElementById('s_credit').value = d.v; markCredit(); break;
       case 'sessionPreset': document.getElementById('s_session').value = d.v; markSessionSeg(); break;
