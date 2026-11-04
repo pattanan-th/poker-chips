@@ -10,7 +10,7 @@
   // ---------- identity / storage ----------
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }, // false: private mode or storage full
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
   const NAME_MAX = 100; // only a guard against junk; long names scroll in the player list
@@ -85,15 +85,38 @@
   }
 
   let lastRemember = 0;
+  // The phone's storage is small (about 5 MB) and a big table with its undo steps fills it fast.
+  // If a save doesn't fit, drop other rooms' saves (oldest first), then keep fewer undo steps,
+  // so this game is never left on an old copy that would come back on reopening.
   function saveHost() {
-    store.set(hostKey(code), { code, S, hist: hist.slice(-30), secrets });
+    const rec = (n) => ({ code, S, hist: hist.slice(-n), secrets });
+    let ok = store.set(hostKey(code), rec(15));
+    if (!ok) {
+      const recent = store.get(ROOMS_KEY, []).map((r) => r.code);
+      const others = hostSaves().filter((c) => c !== code)
+        .sort((a, b) => (recent.indexOf(a) < 0 ? 99 : recent.indexOf(a)) - (recent.indexOf(b) < 0 ? 99 : recent.indexOf(b))).reverse();
+      while (!ok && others.length) { store.del(hostKey(others.shift())); ok = store.set(hostKey(code), rec(15)); }
+      if (!ok) ok = store.set(hostKey(code), rec(3)) || store.set(hostKey(code), rec(0));
+      if (!ok && !ui.saveWarned) { ui.saveWarned = true; toast('พื้นที่ในเครื่องเต็ม — บันทึกเกมไม่ได้ ถ้าปิดแอปเกมล่าสุดจะหาย'); }
+    }
     if (Date.now() - lastRemember > 30000) { lastRemember = Date.now(); rememberRoom(code, 'host', S); }
+  }
+  function hostSaves() {
+    const out = [];
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('pk:host:')) out.push(k.slice(8)); } } catch (e) { /* no storage */ }
+    return out;
+  }
+  // saves of rooms that fell off the recent list can never be reopened: clear them
+  function pruneHostSaves() {
+    const keep = new Set(store.get(ROOMS_KEY, []).map((r) => r.code).concat(code || []));
+    hostSaves().forEach((c) => { if (!keep.has(c)) store.del(hostKey(c)); });
   }
 
   // probe: if the room id is already taken, check whether another host is live there
   // (someone took over while we were gone) and step down to player instead of fighting for it.
   function startHost(c, game, h, probe, sec) {
     role = 'host'; code = c; S = game; hist = h || []; secrets = sec || {}; online = new Set(); hostLostAt = null;
+    pruneHostSaves();
     S.hostId = myId;
     stampClock(true); // a reload or a new host gives the current turn a fresh clock
     lastRemember = Date.now(); rememberRoom(code, 'host', S);
@@ -991,7 +1014,7 @@
     ui.eq = { key, val: undefined };
     setTimeout(() => {
       if (!ui.eq || ui.eq.key !== key) return;
-      ui.eq.val = Cards.equity(cards, board, opps, h.game, h.game === 'plo' ? 800 : 1500);
+      ui.eq.val = Cards.equity(cards, board, opps, h.game, h.game === 'plo' || opps > 8 ? 700 : 1500); // fewer runs on crowded tables
       render();
     }, 30);
     return undefined;
