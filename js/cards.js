@@ -1,4 +1,5 @@
-// App-dealt cards for games without a physical deck (Hold'em: 2 hole cards, Omaha: 4).
+// App-dealt cards for games without a physical deck (Hold'em: 2 hole cards, Omaha: 4,
+// Short Deck: Hold'em with the 2s-5s taken out).
 // The host phone shuffles with the
 // browser's cryptographic RNG, keeps the deck outside the shared state, sends each player
 // only their own hole cards, reveals the board street by street and judges the showdown.
@@ -8,6 +9,10 @@
   const RANKS = '23456789TJQKA';
   const SUITS = ['s', 'h', 'd', 'c'];
   const HAND_NAMES = ['High Card', 'One Pair', 'Two Pair', 'Three of a Kind', 'Straight', 'Flush', 'Full House', 'Four of a Kind', 'Straight Flush'];
+  // Short Deck order (Triton rules): a flush beats a full house and three of a kind beats a straight
+  const SHORT_NAMES = ['High Card', 'One Pair', 'Two Pair', 'Straight', 'Three of a Kind', 'Full House', 'Flush', 'Four of a Kind', 'Straight Flush'];
+  const SHORT_RANK = [0, 1, 2, 4, 3, 6, 5, 7, 8]; // standard category -> short-deck category
+  const SHORT_MIN = 4; // rank index of the 6
   const BOARD_SHOWN = { preflop: 0, flop: 3, turn: 4, river: 5, showdown: 5 };
 
   // card = 0..51; rank 0 ('2') .. 12 ('A')
@@ -26,8 +31,11 @@
     return buf[0] % n;
   }
 
-  function shuffle() {
-    const d = Array.from({ length: 52 }, (_, i) => i);
+  // the cards a game plays with: all 52, or 36 (6 to A) in Short Deck
+  const deckOf = (game) => Array.from({ length: 52 }, (_, i) => i).filter((c) => game !== 'short' || rankOf(c) >= SHORT_MIN);
+
+  function shuffle(game) {
+    const d = deckOf(game);
     for (let i = d.length - 1; i > 0; i--) {
       const j = randInt(i + 1);
       [d[i], d[j]] = [d[j], d[i]];
@@ -36,12 +44,12 @@
   }
 
   const holeCount = (game) => (game === 'plo' ? 4 : 2);
-  // 4 hole cards each + 3 burns + 5 board must fit in 52 cards
-  const maxPlayers = (game) => Math.floor((52 - 8) / holeCount(game));
+  // hole cards each + 3 burns + 5 board must fit in the deck: Hold'em 22, Omaha 11, Short Deck 14
+  const maxPlayers = (game) => Math.floor((deckOf(game).length - 8) / holeCount(game));
 
   // Deal like at a table: one card each around (2 or 4 times), then burn-and-turn the board.
   function deal(ids, game) {
-    const deck = shuffle();
+    const deck = shuffle(game);
     const hole = {};
     for (let r = 0; r < holeCount(game); r++) ids.forEach((id) => { (hole[id] = hole[id] || []).push(deck.pop()); });
     const board = [];
@@ -50,14 +58,21 @@
   }
 
   // score of exactly 5 cards: [category, ...tiebreak ranks], compared element by element
-  function score5(cs) {
+  function score5(cs, game) {
+    const sc = score5std(cs, game === 'short');
+    if (game === 'short') sc[0] = SHORT_RANK[sc[0]];
+    return sc;
+  }
+
+  function score5std(cs, shortDeck) {
     const ranks = cs.map(rankOf).sort((a, b) => b - a);
     const flush = cs.every((c) => suitOf(c) === suitOf(cs[0]));
     const uniq = [...new Set(ranks)];
     let straightHigh = -1;
     if (uniq.length === 5) {
       if (uniq[0] - uniq[4] === 4) straightHigh = uniq[0];
-      else if (uniq.join() === '12,3,2,1,0') straightHigh = 3; // A-2-3-4-5
+      else if (!shortDeck && uniq.join() === '12,3,2,1,0') straightHigh = 3; // A-2-3-4-5
+      else if (shortDeck && uniq.join() === '12,7,6,5,4') straightHigh = 7; // A-6-7-8-9: the ace plays low
     }
     if (flush && straightHigh >= 0) return [8, straightHigh];
     const counts = {};
@@ -84,18 +99,20 @@
   }
 
   // best 5 of up to 7 cards
-  function best(cards) {
+  const nameOf = (score, game) => (game === 'short' ? SHORT_NAMES : HAND_NAMES)[score[0]];
+
+  function best(cards, game) {
     if (cards.length < 5) return null;
     let top = null;
     (function pick(start, chosen) {
       if (chosen.length === 5) {
-        const sc = score5(chosen);
+        const sc = score5(chosen, game);
         if (!top || compare(sc, top) > 0) top = sc;
         return;
       }
       for (let i = start; i <= cards.length - (5 - chosen.length); i++) pick(i + 1, chosen.concat(cards[i]));
     })(0, []);
-    return { score: top, name: HAND_NAMES[top[0]] };
+    return { score: top, name: nameOf(top, game) };
   }
 
   // Omaha: exactly 2 hole cards + exactly 3 board cards
@@ -111,14 +128,14 @@
     return { score: top, name: HAND_NAMES[top[0]] };
   }
 
-  const bestFor = (hole, board, game) => (game === 'plo' ? bestOmaha(hole, board) : best(hole.concat(board)));
+  const bestFor = (hole, board, game) => (game === 'plo' ? bestOmaha(hole, board) : best(hole.concat(board), game));
 
   // Chance (0..1) that `hole` wins against `opps` unknown hands, by dealing out the unseen cards
   // at random `iters` times. A split counts as a share of the pot.
   function equity(hole, board, opps, game, iters) {
     const seen = new Set(hole.concat(board));
     const unseen = [];
-    for (let c = 0; c < 52; c++) if (!seen.has(c)) unseen.push(c);
+    deckOf(game).forEach((c) => { if (!seen.has(c)) unseen.push(c); });
     const n = holeCount(game);
     const need = opps * n + (5 - board.length);
     if (opps < 1) return 1;
@@ -201,7 +218,7 @@
     s.log.push(`${(s.players.find((p) => p.id === id) || {}).name} โชว์ไพ่${made ? ` (${made.name})` : ''}`);
   }
 
-  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deal, score5, best, bestOmaha, bestFor, holeCount, maxPlayers, compare, equity, sync, show };
+  const Cards = { RANKS, SUITS, HAND_NAMES, label, rankOf, suitOf, randInt, shuffle, deckOf, deal, score5, best, bestOmaha, bestFor, holeCount, maxPlayers, compare, equity, sync, show };
   if (typeof module !== 'undefined' && module.exports) module.exports = Cards;
   else root.Cards = Cards;
 })(this);

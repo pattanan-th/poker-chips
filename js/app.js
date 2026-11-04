@@ -175,9 +175,11 @@
 
   // Seats per room, so a deal never runs out of cards. Hold'em: 2 each + 5 board + 3 burns → 22.
   // Omaha: 4 each + 8 → 11. Pok Deng: up to 3 each, banker included → 17.
+  const GAME_NAMES = { nlh: "Texas Hold'em", plo: 'Omaha (PLO)', short: 'Short Deck' };
+  const GAME_TAG = { plo: 'PLO', short: 'Short Deck' };
   function seatLimit(game) {
     if (isPD()) return 17;
-    return (game || S.settings.game) === 'plo' ? 11 : 22;
+    return Cards.maxPlayers(game || S.settings.game);
   }
   const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
@@ -287,7 +289,7 @@
         const old = S.settings;
         if (S.hand && !S.hand.done && cmd.settings.game != null && cmd.settings.game !== (old.game || 'nlh')) throw new Error('เปลี่ยนเกมได้หลังจบมือ');
         if (S.hand && !S.hand.done && cmd.settings.appCards != null && !!cmd.settings.appCards !== !!old.appCards) throw new Error('เปลี่ยนแบบไพ่ได้หลังจบมือ');
-        if (cmd.settings.game && cmd.settings.game !== old.game && S.players.length > seatLimit(cmd.settings.game)) throw new Error(`${cmd.settings.game === 'plo' ? 'Omaha' : "Texas Hold'em"} เล่นได้สูงสุด ${seatLimit(cmd.settings.game)} คน — ตอนนี้มี ${S.players.length} คน`);
+        if (cmd.settings.game && cmd.settings.game !== old.game && S.players.length > seatLimit(cmd.settings.game)) throw new Error(`${GAME_NAMES[cmd.settings.game] || "Texas Hold'em"} เล่นได้สูงสุด ${seatLimit(cmd.settings.game)} คน — ตอนนี้มี ${S.players.length} คน`);
         if (cmd.settings.appCards === false && S.players.some((p) => p.bot)) throw new Error('บอทเล่นได้เฉพาะโหมดแอปแจกไพ่ — ลบบอทออกก่อน');
         S.settings = Object.assign({}, old, cmd.settings);
         if (S.handNo > 0) S.settings.credit = !!old.credit; // can't switch buy-in style mid-game
@@ -628,7 +630,7 @@
       <div class="link">${esc(joinUrl())}</div>
     </div>
     <div class="card">
-      <h2>ผู้เล่น (${S.players.length}/${seatLimit()}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${S.settings.game === 'plo' ? 'PLO · ' : ''}${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
+      <h2>ผู้เล่น (${S.players.length}/${seatLimit()}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${GAME_TAG[S.settings.game] ? GAME_TAG[S.settings.game] + ' · ' : ''}${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
       <div class="players">${list || '<p class="muted">ยังไม่มีผู้เล่น</p>'}</div>
       ${isHost() ? `<p class="muted small">${isPD() ? 'คนแรกในรายการเป็นเจ้ามือป๊อกเด้ง (🏦) เปลี่ยนได้ทีหลัง' : 'เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)'}</p>
         ${isPD() ? '' : '<button class="ghost" style="width:100%;margin-bottom:8px" data-a="cmd" data-c="addBot">🤖 เพิ่มบอท (เล่นคนเดียว / ทดสอบ)</button>'}
@@ -699,10 +701,10 @@
         <div class="hint">${h.voided ? 'ยกเลิกมือนี้ — คืนชิปทุกคนแล้ว' : ''}${Object.entries(h.result || {}).map(([id, a]) => `${esc((pById(id) || {}).name)} ได้ ${fmt(a)}`).join(' · ')}</div>`;
     } else {
       const hint = h.appCards ? '' : h.street === 'showdown' ? (h.runout ? 'เปิดไพ่กลางให้ครบ 5 ใบ แล้วหงายไพ่' : 'หงายไพ่ — เจ้ามือเลือกผู้ชนะ')
-        : { flop: 'ดีลเลอร์เปิด Flop 3 ใบ', turn: 'ดีลเลอร์เปิด Turn', river: 'ดีลเลอร์เปิด River', preflop: `แจกไพ่คนละ ${h.game === 'plo' ? 4 : 2} ใบ` }[h.street];
+        : { flop: 'ดีลเลอร์เปิด Flop 3 ใบ', turn: 'ดีลเลอร์เปิด Turn', river: 'ดีลเลอร์เปิด River', preflop: h.game === 'short' ? 'แจกไพ่คนละ 2 ใบ (เอาไพ่ 2–5 ออก เหลือ 36 ใบ)' : `แจกไพ่คนละ ${h.game === 'plo' ? 4 : 2} ใบ` }[h.street];
       const side = h.pots && h.pots.length > 1 ? `<div class="sidepots">${h.pots.map((p, i) => `${i ? 'Side ' + i : 'Main'} ${fmt(p.amount)}`).join(' · ')}</div>` : '';
       potHtml = `<div class="lbl">Pot · มือที่ ${h.no}</div><div class="amt">${fmt(pot)}</div>${side}
-        <span class="street">${E.streetName(h.street)}${h.game === 'plo' ? ' · PLO' : ''}</span>${hint ? `<div class="hint">${hint}</div>` : ''}`;
+        <span class="street">${E.streetName(h.street)}${GAME_TAG[h.game] ? ' · ' + GAME_TAG[h.game] : ''}</span>${hint ? `<div class="hint">${hint}</div>` : ''}`;
     }
     if (h && h.appCards) potHtml += boardHtml(h.board || []);
     const lastLog = S.log.slice(-2).map(esc).join('<br>');
@@ -1301,7 +1303,8 @@
   }
 
   function ranksSheet() {
-    return ['อันดับไพ่', `<img class="ranks" src="img/hand-rankings.jpg?v=21" alt="อันดับไพ่โป๊กเกอร์ จาก Royal Flush ถึง High Card">`];
+    const short = S && S.settings.game === 'short';
+    return ['อันดับไพ่', `${short ? '<p class="tip" style="margin-top:0">Short Deck ต่างจากรูปนี้: <b>Flush ชนะ Full House</b> · <b>ตอง ชนะ Straight</b> · A-6-7-8-9 เป็น Straight ที่เล็กที่สุด</p>' : ''}<img class="ranks" src="img/hand-rankings.jpg?v=21" alt="อันดับไพ่โป๊กเกอร์ จาก Royal Flush ถึง High Card">`];
   }
 
   function inviteSheet() {
@@ -1329,9 +1332,9 @@
     return ['ตั้งค่า', `<div class="settings">
       ${lab('รูปแบบ', 'mode', 'Cash game: ซื้อชิป/Rebuy ได้ เล่นจนเลิก · Tournament: ชิปเท่ากัน Blind ขึ้นตามเวลา เล่นจนเหลือคนเดียว · เปลี่ยนไม่ได้หลังเริ่มเกม')}
       <select id="s_mode" ${locked ? 'disabled' : ''}><option value="cash" ${st.mode === 'cash' ? 'selected' : ''}>Cash game</option><option value="tournament" ${st.mode === 'tournament' ? 'selected' : ''}>Tournament</option></select>
-      ${lab('เกม', 'game', "Texas Hold'em: No-Limit แจกคนละ 2 ใบ · Omaha (PLO): Pot-Limit แจกคนละ 4 ใบ ต้องใช้ไพ่ในมือ 2 ใบพอดี + ไพ่กลาง 3 ใบ Raise ได้สูงสุดเท่า Pot · เปลี่ยนได้หลังจบมือ")}
-      <input type="hidden" id="s_game" value="${st.game === 'plo' ? 'plo' : 'nlh'}">
-      ${seg('gameSeg', st.game === 'plo' ? 'plo' : 'nlh', [['nlh', "Texas Hold'em"], ['plo', 'Omaha (PLO)']], 'gameType')}
+      ${lab('เกม', 'game', "Texas Hold'em: No-Limit แจกคนละ 2 ใบ · Omaha (PLO): Pot-Limit แจกคนละ 4 ใบ ต้องใช้ไพ่ในมือ 2 ใบพอดี + ไพ่กลาง 3 ใบ Raise ได้สูงสุดเท่า Pot · Short Deck: Hold'em ที่เอาไพ่ 2–5 ออก (36 ใบ) Flush ชนะ Full House, ตอง ชนะ Straight, A-6-7-8-9 เป็น Straight · ห้องรับได้ Hold'em 22 / Omaha 11 / Short Deck 14 คน · เปลี่ยนได้หลังจบมือ")}
+      <input type="hidden" id="s_game" value="${GAME_NAMES[st.game] ? st.game : 'nlh'}">
+      ${seg('gameSeg', GAME_NAMES[st.game] ? st.game : 'nlh', [['nlh', "Hold'em"], ['plo', 'Omaha'], ['short', 'Short Deck']], 'gameType')}
       ${lab('ไพ่', 'cards', 'ใช้ไพ่จริง: แจกไพ่บนโต๊ะ เจ้ามือเลือกผู้ชนะเอง · แอปแจกไพ่ให้: สับแบบสุ่มเท่ากันทุกใบ แต่ละคนเห็นแค่ไพ่ตัวเองในมือถือ เปิดไพ่กลางและตัดสินผู้ชนะให้เอง (ต้องใช้ถ้ามีบอท) · เปลี่ยนได้หลังจบมือ')}
       <input type="hidden" id="s_cards" value="${st.appCards ? 1 : 0}">
       ${seg('cardsSeg', st.appCards ? 1 : 0, [[0, '🃏 ไพ่จริง'], [1, '📱 แอปแจกไพ่']], 'cardsMode')}

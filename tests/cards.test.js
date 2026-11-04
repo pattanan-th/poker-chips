@@ -113,4 +113,28 @@ test('too many players for a PLO deal is refused', () => {
   assert.throws(() => C.sync(s, {}, E), /สูงสุด 11/);
 });
 
+test('short deck: 36 cards, flush beats full house, trips beat straight, A-6-7-8-9', () => {
+  assert.strictEqual(C.deckOf('short').length, 36);
+  assert.ok(C.deckOf('short').every((x) => C.rankOf(x) >= 4));
+  assert.strictEqual(C.maxPlayers('short'), 14);
+  const sb = (str) => C.best(cs(str), 'short');
+  const cmp = (a, b) => Math.sign(C.compare(sb(a).score, sb(b).score));
+  assert.strictEqual(sb('Ah 7h 9h Jh Kh 6c 8d').name, 'Flush');
+  assert.strictEqual(cmp('Ah 7h 9h Jh Kh 6c 8d', '9h 9d 9s 6c 6d Tc Kh'), 1);   // flush > full house
+  assert.strictEqual(cmp('7h 7d 7s Ac 9d Jc Kh', '6h 7d 8s 9c Td Kc Kh'), 1);   // trips > straight
+  assert.strictEqual(sb('Ah 6d 7s 8c 9h Kc Qd').name, 'Straight');               // ace plays low
+  assert.strictEqual(cmp('Ah 6d 7s 8c 9h Kc Qd', '6h 7d 8s 9c Th Kc Qd'), -1);  // wheel is the smallest
+  // the same hands under normal rules keep the usual order
+  assert.ok(C.compare(C.best(cs('9h 9d 9s 6c 6d Tc Kh')).score, C.best(cs('Ah 7h 9h Jh Kh 6c 8d')).score) > 0);
+});
+
+test('short deck deal only uses 6 to A', () => {
+  const d = C.deal(['a', 'b', 'c', 'd'], 'short');
+  const all = [...Object.values(d.hole).flat(), ...d.board, ...d.rest];
+  assert.strictEqual(all.length, 36 - 3);
+  assert.ok(all.every((x) => C.rankOf(x) >= 4));
+  const e = C.equity(cs('As Ah'), [], 1, 'short', 300);
+  assert.ok(e > 0.6 && e < 0.95, `AA equity ${e}`);
+});
+
 console.log(`\n${passed} passed`);

@@ -21,7 +21,7 @@
         buyInValue: 0,          // money per buy-in, for the settlement table
         sessionMin: 0,          // cash: planned session length in minutes (0 = no clock)
         credit: false,          // cash without buy-in: play on credit, balances go +/- and settle at the end
-        game: 'nlh',            // 'nlh' = No-Limit Texas Hold'em | 'plo' = Pot-Limit Omaha
+        game: 'nlh',            // 'nlh' = No-Limit Texas Hold'em | 'plo' = Pot-Limit Omaha | 'short' = Short Deck (6+) Hold'em
         autoNext: 0,            // seconds after a hand ends before the next one starts by itself (0 = host starts it)
         actSec: 0,              // seconds a player has to act before an automatic check/fold (0 = no limit)
         levels: DEFAULT_LEVELS,
@@ -167,7 +167,7 @@
       bets: {}, contrib: {}, folded: {}, allIn: {}, acted: {}, noRaise: {},
       currentBet: b.bb, minRaise: b.bb, toAct: null, last: null,
       pots: null, done: false, result: null, runout: false, lastAct: {},
-      start: {}, actions: [], blinds: b, game: s.settings.game === 'plo' ? 'plo' : 'nlh',
+      start: {}, actions: [], blinds: b, game: ['plo', 'short'].includes(s.settings.game) ? s.settings.game : 'nlh',
     };
     ids.forEach((id) => { h.start[id] = player(s, id).stack; });
     if (b.ante) ids.forEach((id) => {
