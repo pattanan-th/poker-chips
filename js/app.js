@@ -18,8 +18,9 @@
   // ?pid= lets several tabs on one device be different players (testing)
   const myId = params.get('pid') || store.get('pk:id') || (() => { const id = rid(); store.set('pk:id', id); return id; })();
   let myName = store.get('pk:name', '');
-  let myEmoji = store.get('pk:emoji', ''); // picture shown in the seat instead of the name's first letter
-  const EMOJIS = ['😎', '🤠', '🥷', '🦊', '🐯', '🐼', '🐸', '🐵', '👻', '🦄', '🔥', '💎', '🍀', '🎯', '👑', '💰'];
+  // picture shown in the seat instead of the name's first letter; a kangaroo until you pick ('' = none)
+  let myEmoji = store.get('pk:emoji', '🦘');
+  const EMOJIS = ['🦘', '😎', '🤠', '🥷', '🦊', '🐯', '🐼', '🐸', '👻', '🦄', '🔥', '💎', '🍀', '🎯', '👑', '💰'];
   // keep one emoji (or one character): the first grapheme, so flags and skin tones stay whole
   function cleanEmoji(v) {
     const t = String(v || '').trim();
