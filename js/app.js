@@ -164,11 +164,11 @@
     return x && x.no === h.no ? x.cards : null;
   }
 
-  // Seats per room, so a deal never runs out of cards. Hold'em: 2 each + 5 board + 3 burns fits 22,
-  // but a table seats 10. Omaha: 4 each + 8 → 11. Pok Deng: up to 3 each, banker included → 17.
+  // Seats per room, so a deal never runs out of cards. Hold'em: 2 each + 5 board + 3 burns → 22.
+  // Omaha: 4 each + 8 → 11. Pok Deng: up to 3 each, banker included → 17.
   function seatLimit(game) {
     if (isPD()) return 17;
-    return (game || S.settings.game) === 'plo' ? 11 : 10;
+    return (game || S.settings.game) === 'plo' ? 11 : 22;
   }
   const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
@@ -731,6 +731,9 @@
     // seat centres run along the rail
     const x0 = 42 * k, x1 = W - 42 * k, y0 = 46 * k, y1 = H - 50 * k;
     const per = 2 * ((x1 - x0) + (y1 - y0));
+    // a crowded table (more than 12) drops the status line and shrinks seats to fit the gap between them
+    const dense = n > 12;
+    const ks = Math.max(0.55, Math.min(k, (per / Math.max(n, 1)) / (dense ? 86 : 104)));
     const pct = (x, y) => `left:${(x / W * 100).toFixed(2)}%;top:${(y / H * 100).toFixed(2)}%`;
     const cx = W / 2; const cy = H / 2;
     const seats = order.map((p, i) => {
@@ -740,9 +743,9 @@
       // bet chips sit between the seat and the middle, clear of the seat's labels
       const vx = cx - x; const vy = cy - y; const len = Math.hypot(vx, vy) || 1;
       const side = Math.abs(vx / len) > 0.7;
-      const reach = (side ? 50 : 64) * k;
+      const reach = (side ? (dense ? 62 : 50) : 64) * ks;
       // beside the avatar on side seats (the avatar is the top part of the seat), toward the middle elsewhere
-      const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach - (side ? 24 * k : 0))}">${fmt(s.betAmt)}</span>` : '';
+      const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach - (side ? 24 * ks : 0))}">${fmt(s.betAmt)}</span>` : '';
       return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="${pct(x, y)}">
           <div class="av">${esc(Array.from(p.name.trim())[0] || '?')}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
           <div class="snm">${nameHtml(p.name)}</div>
@@ -753,7 +756,7 @@
     }).join('');
     const meSeat = mine >= 0 ? trackPoint(0, x0, y0, x1, y1) : null;
     const meP = mine >= 0 ? seatInfo(seated[mine]) : null;
-    return `<div class="ptable" style="height:${H}px;--k:${k.toFixed(3)}"><div class="rail"></div><div class="felt"></div>
+    return `<div class="ptable${dense ? ' dense' : ''}" style="height:${H}px;--k:${k.toFixed(3)};--ks:${ks.toFixed(3)}"><div class="rail"></div><div class="felt"></div>
       <div class="tcenter"><div class="pot">${potHtml}</div>
         <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button>`
           : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>'}<button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button></div>
