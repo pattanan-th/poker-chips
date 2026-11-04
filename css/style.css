@@ -348,6 +348,26 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .seatglow { position: fixed; z-index: 31; pointer-events: none; border-radius: 22px; border: 3px solid var(--gold);
   box-shadow: 0 0 18px 6px rgba(242, 193, 78, .75), inset 0 0 18px rgba(242, 193, 78, .5); animation: seatglow 1s ease-in-out 3 alternate; }
 @keyframes seatglow { from { opacity: .35; transform: scale(.96); } to { opacity: 1; transform: scale(1.04); } }
+/* BIG WIN banner */
+.bigwin { position: fixed; inset: 0; z-index: 33; pointer-events: none; display: flex; align-items: center; justify-content: center; animation: bwin-in .35s ease-out; }
+.bigwin.out { opacity: 0; transition: opacity .5s; }
+.bigwin.mine { background: radial-gradient(circle, rgba(242, 193, 78, .35), rgba(0, 0, 0, .55) 70%); }
+.bigwin.other { inset: auto; left: 0; right: 0; top: 70px; }
+.bigwin .rays { position: absolute; width: 160vmax; height: 160vmax; left: 50%; top: 50%; margin: -80vmax 0 0 -80vmax;
+  background: repeating-conic-gradient(rgba(255, 224, 130, .28) 0 8deg, transparent 8deg 22deg);
+  -webkit-mask: radial-gradient(circle, #000 0, transparent 45%); mask: radial-gradient(circle, #000 0, transparent 45%); animation: bwspin 9s linear infinite; }
+.bwin { position: relative; text-align: center; animation: bwpop .6s cubic-bezier(.2, 1.6, .4, 1); }
+.bw1 { font-weight: 900; letter-spacing: 2px; background: linear-gradient(#fff6c8, #f2c14e 55%, #c98a1a); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 3px 0 #6b4300) drop-shadow(0 0 14px rgba(242, 193, 78, .8)); }
+.bigwin.mine .bw1 { font-size: 64px; }
+.bigwin.mine .bw2 { font-size: 36px; }
+.bw2 { font-weight: 800; color: #fff; text-shadow: 0 2px 8px #000, 0 0 16px rgba(242, 193, 78, .9); }
+.bigwin.other .bwin { background: rgba(0, 0, 0, .7); border: 2px solid var(--gold); border-radius: 16px; padding: 6px 18px; box-shadow: 0 0 18px rgba(242, 193, 78, .6); }
+.bigwin.other .bw1 { font-size: 20px; letter-spacing: 0; } .bigwin.other .bw2 { font-size: 18px; }
+@keyframes bwin-in { from { opacity: 0; } }
+@keyframes bwpop { from { transform: scale(.3); opacity: 0; } }
+@keyframes bwspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .bigwin .rays, .bwin { animation: none; } }
 .winpop { position: fixed; z-index: 31; transform: translate(-50%, -50%); pointer-events: none; font-weight: 800; font-size: 20px; color: var(--green); text-shadow: 0 2px 6px #000; animation: winpop 1.6s ease-out forwards; }
 @keyframes winpop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 70% { opacity: 1; transform: translate(-50%, -110%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -150%) scale(1); } }
 .sitbar { display: flex; flex-direction: column; align-items: center; gap: 6px; }

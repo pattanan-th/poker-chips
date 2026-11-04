@@ -79,6 +79,12 @@
     turn() { tone(659, 0, 0.18, { vol: 0.18 }); tone(880, 0.13, 0.3, { vol: 0.18 }); },
     win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.28, { type: 'triangle', vol: 0.15 })); sounds.chip(5); },
     pot() { sounds.chip(4); },
+    // big win fanfare: a rising arpeggio, a held chord and a shower of chips
+    bigwin() {
+      [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.09, 0.3, { type: 'triangle', vol: 0.16 }));
+      [523, 659, 784, 1047].forEach((f) => tone(f, 0.5, 0.9, { type: 'triangle', vol: 0.09 }));
+      for (let i = 0; i < 8; i++) { tone(2400 + Math.random() * 1600, 0.55 + i * 0.09, 0.06, { vol: 0.08 }); noise(0.55 + i * 0.09, 0.03, { freq: 5000, q: 2, vol: 0.1 }); }
+    },
     // one chip dropping onto the winner's stack, a little higher each time
     land(i) { const f = 2600 + (i || 0) * 120; tone(f, 0, 0.06, { vol: 0.1 }); noise(0, 0.025, { freq: 4800, q: 2, vol: 0.12 }); },
     // a card slapped face up

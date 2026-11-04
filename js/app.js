@@ -998,13 +998,31 @@
       // a big pot: chips rain down the winner's own screen; everyone else sees their seat glow
       if (bigPot) {
         const at = 250 + w * 350 + n * 70 + 300;
-        if (id === myId) setTimeout(() => chipRain(reduce), at);
-        else setTimeout(() => seatGlow(id), at);
+        const who = pById(id);
+        if (id === myId) setTimeout(() => { chipRain(reduce); bigWin(who ? who.name : '', amt, true, reduce); }, at);
+        else setTimeout(() => { seatGlow(id); bigWin(who ? who.name : '', amt, false, reduce); }, at);
       }
     });
   }
 
   const BIG_POT_BB = 50;
+  // BIG WIN banner: full-screen burst with a counting amount for the winner, a slim banner for everyone else
+  function bigWin(name, amt, mine, reduce) {
+    const box = document.createElement('div');
+    box.className = `bigwin ${mine ? 'mine' : 'other'}`;
+    box.innerHTML = `${mine ? '<div class="rays"></div>' : ''}<div class="bwin"><div class="bw1">${mine ? 'BIG WIN' : `🏆 ${esc(name)}`}</div><div class="bw2">+0</div></div>`;
+    document.body.appendChild(box);
+    Sfx.play('bigwin');
+    const out = box.querySelector('.bw2');
+    const dur = reduce ? 0 : 1400; const t0 = performance.now();
+    const step = (t) => {
+      const k = dur ? Math.min(1, (t - t0) / dur) : 1;
+      out.textContent = `+${fmt(Math.round(amt * (1 - Math.pow(1 - k, 3))))}`;
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    setTimeout(() => { box.classList.add('out'); setTimeout(() => box.remove(), 500); }, mine ? 3200 : 2400);
+  }
   function chipRain(reduce) {
     const box = document.createElement('div');
     box.className = 'chiprain';
