@@ -249,3 +249,9 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 
 /* current hand: all actions so far */
 .feed { padding: 10px 12px; cursor: pointer; }
+
+/* turn clock / auto next hand countdown */
+.tclock { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; }
+.cd.urgent { color: var(--red); }
+.tclock:has(.cd.urgent) { color: var(--red); animation: pulse .8s ease-in-out infinite alternate; }
+@keyframes pulse { to { opacity: .5; } }

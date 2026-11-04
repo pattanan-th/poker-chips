@@ -86,6 +86,7 @@
   function startHost(c, game, h, probe, sec) {
     role = 'host'; code = c; S = game; hist = h || []; secrets = sec || {}; online = new Set(); hostLostAt = null;
     S.hostId = myId;
+    stampClock(true); // a reload or a new host gives the current turn a fresh clock
     lastRemember = Date.now(); rememberRoom(code, 'host', S);
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
     net = Net.host(code, {
@@ -185,12 +186,14 @@
         S = JSON.parse(hist.pop());
         S.hostId = myId; // snapshots taken before a handoff name the previous host
         botHold = Date.now() + 5000;
+        stampClock(true);
         toast('ย้อนกลับ 1 ขั้นแล้ว', true);
       } else {
         before = JSON.stringify(S);
         run(cmd);
         if (isPD()) PD.tidy(S);
         Cards.sync(S, secrets, E);
+        stampClock();
         hist.push(before);
         if (hist.length > 40) hist.shift();
       }
@@ -205,7 +208,15 @@
   function run(cmd) {
     const t = Date.now();
     switch (cmd.c) {
-      case 'act': return E.act(S, cmd.pid, cmd.type, cmd.amount);
+      case 'act':
+        E.act(S, cmd.pid, cmd.type, cmd.amount);
+        if (cmd.timeout) {
+          const acts = S.hand.actions.filter((x) => x.id === cmd.pid); const x = acts[acts.length - 1];
+          if (x) x.t += ' (หมดเวลา)';
+          const i = S.log.map((l, k) => [l, k]).reverse().find(([l]) => l.startsWith(pById(cmd.pid).name + ' '));
+          if (i) S.log[i[1]] += ' (หมดเวลา)';
+        }
+        return;
       case 'show': return Cards.show(S, secrets, cmd.pid);
       case 'start':
         if (isPD()) { PD.init(S); S.handNo = Math.max(S.handNo, 1); return; }
@@ -319,6 +330,41 @@
     if (isHost() && ui.proxy) return h.toAct;
     return null;
   }
+
+  // ---------- turn clock / auto next hand (host only) ----------
+  // h.turnAt: when the player to act got the turn; h.doneAt: when the hand ended (host clock).
+  function stampClock(reset) {
+    const h = S && S.hand;
+    if (!h) return;
+    const key = `${h.toAct}|${h.actions.length}|${h.street}`;
+    if (!h.done && (reset || h.turnKey !== key)) { h.turnKey = key; h.turnAt = Date.now(); }
+    if (h.done && (reset || !h.doneAt)) h.doneAt = Date.now();
+  }
+  const turnEnds = (h) => (S.settings.actSec > 0 && h && !h.done && h.toAct && h.street !== 'showdown' && h.turnAt ? h.turnAt + S.settings.actSec * 1000 : null);
+  const nextStarts = (h) => (S.settings.autoNext > 0 && h && h.done && h.doneAt && E.eligible(S).length >= 2 ? h.doneAt + S.settings.autoNext * 1000 : null);
+
+  let autoTried = null;
+  setInterval(() => {
+    if (!isHost() || !S || isPD() || handingOff) return;
+    const h = S.hand; const t = Date.now();
+    const te = turnEnds(h);
+    if (te && t >= te && !(pById(h.toAct) || {}).bot) {
+      const free = (h.bets[h.toAct] || 0) >= h.currentBet;
+      return apply({ c: 'act', pid: h.toAct, type: free ? 'check' : 'fold', timeout: true }, myId);
+    }
+    const ns = nextStarts(h);
+    if (ns && t >= ns && autoTried !== h.no) { autoTried = h.no; apply({ c: 'start' }, myId); }
+  }, 500);
+
+  // live countdowns: <span class="cd" data-until="…"> ticks without a full re-render
+  const cdHtml = (until) => (until ? `<span class="cd" data-until="${until}">${Math.max(0, Math.ceil((until - now()) / 1000))}</span>` : '');
+  setInterval(() => {
+    document.querySelectorAll('.cd').forEach((el) => {
+      const s = Math.max(0, Math.ceil((Number(el.dataset.until) - now()) / 1000));
+      if (el.textContent !== String(s)) el.textContent = s;
+      el.classList.toggle('urgent', s <= 5);
+    });
+  }, 250);
 
   // ---------- bots (host only) ----------
   let botTimer = null;
@@ -639,12 +685,13 @@
     else if (live && h.folded[p.id]) { status = 'Fold'; cls += ' fold'; }
     else if (live && h.toAct === p.id) { status = 'กำลังคิด…'; cls += ' turn'; }
     else if (live && h.lastAct[p.id]) status = h.lastAct[p.id];
+    const clock = live && h.toAct === p.id && turnEnds(h) ? ` <span class="tclock">⏱ ${cdHtml(turnEnds(h))}</span>` : '';
     if (!p.out && p.stack === 0 && !(live && inH)) status = S.settings.mode === 'cash' ? 'ชิปหมด — Rebuy?' : status;
     const bet = live && h.bets[p.id] ? `<span class="bet">${fmt(h.bets[p.id])}</span>` : '';
     const won = h && h.done && h.result && h.result[p.id] ? `<div class="won">+${fmt(h.result[p.id])}</div>` : '';
     return `<div class="${cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
+      <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(status)}${clock}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
       <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
@@ -733,11 +780,14 @@
       if (isHost()) {
         const over = S.settings.mode === 'tournament' && E.eligible(S).length < 2 && S.handNo > 0;
         inner = over ? `<div class="grid2">${rebuy || ''}<button class="primary" data-a="sheet" data-v="summary">🏆 สรุปผล</button></div>`
-          : `<div class="row">${rebuy}<button class="primary" style="padding:16px" data-a="cmd" data-c="start">เริ่มมือถัดไป ▶</button></div>`;
-      } else inner = rebuy ? `<div class="row">${rebuy}</div>` : `<div class="waitbar">รอเจ้ามือเริ่มมือถัดไป…</div>`;
+          : `<div class="row">${rebuy}<button class="primary" style="padding:16px" data-a="cmd" data-c="start">เริ่มมือถัดไป ▶${nextStarts(h) ? ` <small>(อัตโนมัติใน ${cdHtml(nextStarts(h))} วิ)</small>` : ''}</button></div>`;
+      } else {
+        const wait = nextStarts(h) ? `มือถัดไปเริ่มใน ${cdHtml(nextStarts(h))} วิ` : 'รอเจ้ามือเริ่มมือถัดไป…';
+        inner = rebuy ? `<div class="row">${rebuy}</div>${nextStarts(h) ? `<div class="waitbar" style="margin-top:6px">${wait}</div>` : ''}` : `<div class="waitbar">${wait}</div>`;
+      }
     } else if (h.toAct) {
       const p = pById(h.toAct);
-      inner = `<div class="waitbar">ตาของ <b>${esc(p.name)}</b>${isHost() ? ` · <button class="sm ghost" data-a="proxy">กดแทน</button>` : ''}</div>`;
+      inner = `<div class="waitbar">ตาของ <b>${esc(p.name)}</b>${turnEnds(h) ? ` · ⏱ ${cdHtml(turnEnds(h))} วิ` : ''}${isHost() ? ` · <button class="sm ghost" data-a="proxy">กดแทน</button>` : ''}</div>`;
     } else return '';
     return `<div class="actbar"><div class="in">${inner}</div></div>`;
   }
@@ -771,7 +821,7 @@
       </div>`;
     }
     return `<div class="actbar"><div class="in">
-      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : '<b>ถึงตาคุณ!</b>'}</span><span>${!proxy && myHole() && !ui.holeHidden ? cardsHtml(myHole(), 'sm') + ' ' : ''}${chipWord()} ${chips(a.p)}${a.toCall ? ` · ต้อง call ${fmt(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
+      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : `<b>ถึงตาคุณ!</b>${turnEnds(S.hand) ? ` <span class="tclock">⏱ ${cdHtml(turnEnds(S.hand))}</span>` : ''}`}</span><span>${!proxy && myHole() && !ui.holeHidden ? cardsHtml(myHole(), 'sm') + ' ' : ''}${chipWord()} ${chips(a.p)}${a.toCall ? ` · ต้อง call ${fmt(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
       <div class="btns"><button class="danger" data-a="act" data-t="fold">Fold</button>${callBtn}${raiseBtn}</div>
       ${raise}
     </div></div>`;
@@ -1065,6 +1115,14 @@
       <input type="hidden" id="s_cards" value="${st.appCards ? 1 : 0}">
       <div class="seg" id="cardsSeg">${[[0, '🃏 ใช้ไพ่จริง'], [1, '📱 แอปแจกไพ่ให้']].map(([v, l]) => `<button class="${(st.appCards ? 1 : 0) === v ? 'on' : ''}" data-a="cardsMode" data-v="${v}">${l}</button>`).join('')}</div>
       <p class="muted small" id="cardsHint" ${st.appCards ? '' : 'hidden'}>แอปสับไพ่แบบสุ่มเท่ากันทุกใบ แต่ละคนเห็นแค่ไพ่ของตัวเองในมือถือ ไพ่กลางเปิดให้เองทีละรอบ และตัดสินผู้ชนะให้อัตโนมัติ (เปลี่ยนได้หลังจบมือ)</p>
+      <label>⏱ เวลาตัดสินใจต่อตา</label>
+      <div class="seg">${[0, 15, 30, 60].map((v) => `<button data-a="fillNum" data-t="s_actsec" data-v="${v}">${v ? v + ' วิ' : 'ไม่จำกัด'}</button>`).join('')}</div>
+      <div class="row sessioncustom"><span>หรือกำหนดเอง</span><input id="s_actsec" type="number" inputmode="numeric" min="0" value="${st.actSec || 0}"><span>วินาที</span></div>
+      <p class="muted small">หมดเวลาแล้วแอป Check ให้ถ้า Check ได้ ไม่งั้น Fold · 0 = ไม่จำกัด</p>
+      <label>▶ เริ่มมือถัดไปอัตโนมัติ</label>
+      <div class="seg">${[0, 5, 10, 20].map((v) => `<button data-a="fillNum" data-t="s_autonext" data-v="${v}">${v ? v + ' วิ' : 'ปิด'}</button>`).join('')}</div>
+      <div class="row sessioncustom"><span>หรือกำหนดเอง</span><input id="s_autonext" type="number" inputmode="numeric" min="0" value="${st.autoNext || 0}"><span>วินาที</span></div>
+      <p class="muted small">จบมือแล้วนับถอยหลัง ถ้าเจ้ามือไม่ได้กดเริ่ม เกมจะเริ่มมือใหม่เอง · 0 = เจ้ามือกดเอง</p>
       <div id="buyInBox" ${st.mode === 'cash' ? '' : 'hidden'}>
         <label>Buy-in${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
         <input type="hidden" id="s_credit" value="${st.credit ? 1 : 0}">
@@ -1543,6 +1601,7 @@
         startHost(code, S, [], true);
         break;
       }
+      case 'fillNum': document.getElementById(d.t).value = d.v; break;
       case 'gameType':
         document.getElementById('s_game').value = d.v;
         document.querySelectorAll('#gameSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
@@ -1600,7 +1659,8 @@
       ui.sheet = null; return render();
     }
     const mode = document.getElementById('s_mode').value;
-    const settings = { mode, startStack: num('s_stack') || 1000, appCards: document.getElementById('s_cards').value === '1', game: document.getElementById('s_game').value };
+    const settings = { mode, startStack: num('s_stack') || 1000, appCards: document.getElementById('s_cards').value === '1', game: document.getElementById('s_game').value,
+      actSec: Math.min(600, num('s_actsec')), autoNext: Math.min(600, num('s_autonext')) };
     if (mode === 'cash') {
       Object.assign(settings, { sb: num('s_sb'), bb: num('s_bb'), ante: num('s_ante'), buyInValue: num('s_money'), sessionMin: num('s_session'),
         credit: document.getElementById('s_credit').value === '1', chipBaht: Math.max(0, Number(document.getElementById('s_rate').value) || 0) });

@@ -22,6 +22,8 @@
         sessionMin: 0,          // cash: planned session length in minutes (0 = no clock)
         credit: false,          // cash without buy-in: play on credit, balances go +/- and settle at the end
         game: 'nlh',            // 'nlh' = No-Limit Texas Hold'em | 'plo' = Pot-Limit Omaha
+        autoNext: 0,            // seconds after a hand ends before the next one starts by itself (0 = host starts it)
+        actSec: 0,              // seconds a player has to act before an automatic check/fold (0 = no limit)
         levels: DEFAULT_LEVELS,
       }, settings || {}),
       players: [],
