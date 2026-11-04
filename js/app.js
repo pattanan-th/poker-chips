@@ -1570,9 +1570,52 @@
     return ['รูปแทนตัว', `<p class="muted small" style="margin-top:0">แตะเพื่อเปลี่ยนได้ทันที · ไม่ใช้ = ตัวแรกของชื่อ</p>${emojiPicker()}`];
   }
 
+  // Hand rankings, themed like the table: strongest first for the game being played, each with a worked example
+  // (dimmed cards are kickers that don't make the hand), how often it turns up, and where your own hand stands now.
+  const RANK_INFO = {
+    'Straight Flush': { th: 'เรียง 5 ใบ ดอกเดียวกัน · A-K-Q-J-10 = Royal Flush', ex: 'Ah Kh Qh Jh Th', exShort: 'Ah Kh Qh Jh Th', pct: '0.03%' },
+    'Four of a Kind': { th: 'ตอง 4 ใบเลขเดียวกัน', ex: 'Qh Qd Qs Qc | 7d', exShort: 'Qh Qd Qs Qc | 7d', pct: '0.17%' },
+    'Full House': { th: 'ตอง 1 ชุด + คู่ 1 ชุด', ex: 'Kh Kd Ks 9c 9h', exShort: 'Kh Kd Ks 9c 9h', pct: '2.60%' },
+    'Flush': { th: '5 ใบดอกเดียวกัน ไม่ต้องเรียง', ex: 'Ad Jd 9d 6d 3d', exShort: 'Ad Jd 9d 8d 6d', pct: '3.03%' },
+    'Straight': { th: 'เรียง 5 ใบ คนละดอกได้ · A เป็นได้ทั้งสูงสุดและต่ำสุด', ex: '9s 8h 7d 6c 5h', exShort: 'Ts 9h 8d 7c 6h', pct: '4.62%', shortNote: 'A-6-7-8-9 เป็น Straight ที่เล็กที่สุด' },
+    'Three of a Kind': { th: 'ตอง 3 ใบเลขเดียวกัน', ex: 'Jh Jd Js | Ac 6h', exShort: 'Jh Jd Js | Ac 7h', pct: '4.83%' },
+    'Two Pair': { th: 'สองคู่', ex: 'Ah Ad 8s 8c | Kd', exShort: 'Ah Ad 8s 8c | Kd', pct: '23.5%' },
+    'One Pair': { th: 'คู่เดียว', ex: 'Th Td | As 9c 4d', exShort: 'Th Td | As 9c 7d', pct: '43.8%' },
+    'High Card': { th: 'ไม่มีอะไรเลย ดูไพ่ใบสูงสุด', ex: 'Ah | Jd 9s 6c 3h', exShort: 'Ah | Jd 9s 7c 6h', pct: '17.4%' },
+  };
+  const RANK_ORDER = ['Straight Flush', 'Four of a Kind', 'Full House', 'Flush', 'Straight', 'Three of a Kind', 'Two Pair', 'One Pair', 'High Card'];
+  const RANK_ORDER_SHORT = ['Straight Flush', 'Four of a Kind', 'Flush', 'Full House', 'Three of a Kind', 'Straight', 'Two Pair', 'One Pair', 'High Card'];
+  function exCards(spec) {
+    const [main, kick] = spec.includes('|') ? spec.split('|') : [spec, ''];
+    const one = (t, dim) => {
+      const r = t.slice(0, -1); const su = t.slice(-1);
+      return `<span class="pc sm su-${su}${dim ? ' kick' : ''}">${r === 'T' ? '10' : r}<i>${SUIT_SYM[su]}</i></span>`;
+    };
+    return main.trim().split(/\s+/).map((t) => one(t)).join('') + kick.trim().split(/\s+/).filter(Boolean).map((t) => one(t, true)).join('');
+  }
   function ranksSheet() {
-    const short = S && S.settings.game === 'short';
-    return ['อันดับไพ่', `${short ? '<p class="tip" style="margin-top:0">Short Deck ต่างจากรูปนี้: <b>Flush ชนะ Full House</b> · <b>ตอง ชนะ Straight</b> · A-6-7-8-9 เป็น Straight ที่เล็กที่สุด</p>' : ''}<img class="ranks" src="img/hand-rankings.jpg?v=21" alt="อันดับไพ่โป๊กเกอร์ จาก Royal Flush ถึง High Card">`];
+    const game = (S && S.settings.game) || 'nlh';
+    const short = game === 'short';
+    const h = S && S.hand; const cards = h && myHole();
+    let mine = null;
+    if (h && cards && h.board && h.board.length >= 3 && !h.done) {
+      const b = Cards.bestFor(cards, h.board, h.game); mine = b ? b.name : null;
+    }
+    const rows = (short ? RANK_ORDER_SHORT : RANK_ORDER).map((n, i) => {
+      const r = RANK_INFO[n];
+      return `<div class="rk${mine === n ? ' me' : ''}"><span class="rkn">${i + 1}</span>
+        <div class="rkb"><div class="rkh"><b>${n}</b>${!short && game === 'nlh' ? `<span class="rkp">${r.pct}</span>` : ''}</div>
+        <div class="rkd">${r.th}${short && r.shortNote ? ` · <b>${r.shortNote}</b>` : ''}</div>
+        <div class="rkc">${exCards(short ? r.exShort : r.ex)}</div></div>
+        ${mine === n ? '<span class="rkme">คุณ<br>ถืออยู่</span>' : ''}</div>`;
+    }).join('');
+    const notes = [
+      short ? 'Short Deck ใช้ไพ่ 36 ใบ (ไม่มี 2–5) · <b>Flush ชนะ Full House</b> · <b>ตอง ชนะ Straight</b>' : '',
+      game === 'plo' ? 'Omaha ต้องใช้ไพ่ในมือ <b>2 ใบ</b> + ไพ่กองกลาง <b>3 ใบ</b> เท่านั้น' : '',
+      !short && game === 'nlh' ? '% = โอกาสที่จะเจอมือนั้นเมื่อมีไพ่ 7 ใบ (ในมือ 2 + กลาง 5)' : '',
+      'อันดับเท่ากัน ดูไพ่ใบที่สูงกว่า · ถ้ายังเท่ากันอีก ดู kicker (ใบสีจาง) · ถ้าเท่ากันหมด แบ่งพอต',
+    ].filter(Boolean).map((t) => `<p class="rknote">${t}</p>`).join('');
+    return [`อันดับไพ่ · ${GAME_NAMES[game] || "Hold'em"}`, `<div class="rks">${rows}</div>${notes}`];
   }
 
   function inviteSheet() {

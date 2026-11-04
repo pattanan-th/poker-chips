@@ -256,7 +256,22 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .pl .shown { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gold); margin-top: 3px; }
 .who .pcs { margin-right: 4px; }
 
-.ranks { display: block; width: 100%; max-width: 420px; margin: 0 auto; border-radius: 12px; }
+.rks { display: flex; flex-direction: column; gap: 6px; }
+.rk { position: relative; display: flex; gap: 10px; align-items: center; padding: 8px 10px; background: rgba(0, 0, 0, .22); border: 1px solid var(--line); border-radius: 12px; }
+.rk.me { border-color: var(--gold); background: rgba(242, 193, 78, .12); box-shadow: 0 0 12px rgba(242, 193, 78, .35); }
+.rkn { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); color: var(--gold); font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.rk.me .rkn { background: var(--gold); color: #1a1a1a; }
+.rkb { flex: 1; min-width: 0; }
+.rkh { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rkh b { font-size: 15px; }
+.rkp { font-size: 12px; color: var(--muted); }
+.rkd { font-size: 12px; color: var(--muted); margin: 1px 0 5px; line-height: 1.35; }
+.rkd b { color: var(--gold); font-weight: 600; }
+.rkc { display: flex; gap: 4px; }
+.rkc .pc.kick { opacity: .4; }
+.rkme { flex: none; font-size: 11px; font-weight: 800; line-height: 1.2; text-align: center; color: var(--gold); }
+.rknote { margin: 8px 2px 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.rknote b { color: var(--gold); font-weight: 600; }
 
 /* card turned face up */
 @keyframes flipIn { 0% { transform: perspective(500px) rotateY(90deg) translateY(-6px); filter: brightness(.6); } 60% { transform: perspective(500px) rotateY(-12deg); filter: brightness(1.1); } 100% { transform: none; filter: none; } }
