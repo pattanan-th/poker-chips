@@ -534,7 +534,11 @@
     const actor = actorId();
     if (!actor) ui.raiseOpen = false;
     const myTurn = !!(h && !h.done && h.toAct === myId);
-    if (myTurn && !ui.wasMyTurn) { try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) { /* ignore */ } }
+    if (myTurn && !ui.wasMyTurn) {
+      const pre = preAction(h);
+      if (pre) { ui.pre = null; setTimeout(() => send({ c: 'act', pid: myId, type: pre, seq: S.seq || 0 }), 150); }
+      else { try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) { /* ignore */ } }
+    }
     ui.wasMyTurn = myTurn;
     Sfx.update(S, myId);
 
@@ -895,8 +899,8 @@
           <div class="av${p.emoji ? ' emo' : ''}">${avatarOf(p)}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
           <div class="snm">${nameHtml(p.name)}</div>
           <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${s.wonAmt ? ` <span class="won">+${fmt(s.wonAmt)}</span>` : ''}</div>
-          ${seatBet}<div class="sst">${esc(s.status)}${s.clock}</div>
-          ${shown ? `<div class="sshown">${cardsHtml(shown.cards, 'sm', `s${h.no}${p.id}`)}${shown.hand ? `<div>${esc(shown.hand)}</div>` : ''}</div>` : ''}
+          ${seatBet}${shown ? '' : `<div class="sst">${esc(s.status)}${s.clock}</div>`}
+          ${shown ? `<div class="sshown${y < cy ? ' inl' : ''}">${cardsHtml(shown.cards, 'sm', `s${h.no}${p.id}`)}${shown.hand ? `<div>${esc(shown.hand)}</div>` : ''}</div>` : ''}
         </div>${bet}`;
     }).join('');
     const meSeat = mine >= 0 ? trackPoint(0, path) : null;
@@ -923,7 +927,7 @@
     const recent = lines.slice(-max).reverse();
     const fade = [1, 0.62, 0.42, 0.28, 0.18];
     return `<div class="tlog" data-a="sheet" data-v="hands">${recent.map((l, i) => `<div style="opacity:${fade[i] || 0.15}">${l}</div>`).join('')}
-      ${lines.length > max ? '<div class="more">แตะดูทั้งหมด ›</div>' : ''}</div>`;
+</div>`;
   }
 
   // My hole cards in front of my seat, with what I hold, my chance to win and my bet.
@@ -1130,9 +1134,40 @@
       }
     } else if (h.toAct) {
       const p = pById(h.toAct);
-      inner = `<div class="waitbar">ตาของ <b>${esc(p.name)}</b>${turnEnds(h) ? ` · ⏱ ${cdHtml(turnEnds(h))} วิ` : ''}${isHost() ? ` · <button class="sm ghost" data-a="proxy">กดแทน</button>` : ''}</div>`;
+      inner = `<div class="waitbar">ตาของ <b>${esc(p.name)}</b>${turnEnds(h) ? ` · ⏱ ${cdHtml(turnEnds(h))} วิ` : ''}${isHost() ? ` · <button class="sm ghost" data-a="proxy">กดแทน</button>` : ''}</div>${preBar(h)}`;
     } else return '';
     return `<div class="actbar"><div class="in">${inner}</div></div>`;
+  }
+
+  // Pre-actions: while someone else is deciding, the player picks what to do on their turn and
+  // the app does it the moment the turn comes. Check is dropped if a bet comes in, and Call X if
+  // the amount changes; Check/Fold and Call Any hold.
+  function preState(h) {
+    const me = pById(myId);
+    if (!h || h.done || !me || !h.ids.includes(myId) || h.folded[myId] || h.allIn[myId] || h.street === 'showdown') return null;
+    return { toCall: Math.max(0, h.currentBet - (h.bets[myId] || 0)), stack: me.stack };
+  }
+  function preAction(h) {
+    const p = ui.pre; const st = preState(h);
+    if (!p || !st || p.no !== h.no) return null;
+    if (p.t === 'checkfold') return st.toCall ? 'fold' : 'check';
+    if (p.t === 'check') return st.toCall ? null : 'check';
+    if (p.t === 'call') return st.toCall && st.toCall === p.amt ? 'call' : st.toCall ? null : 'check';
+    if (p.t === 'callany') return st.toCall ? 'call' : 'check';
+    return null;
+  }
+  function preBar(h) {
+    const st = preState(h);
+    if (!st) return '';
+    // an earlier choice that no longer applies (a bet came in, the amount changed) is dropped
+    if (ui.pre && (ui.pre.no !== h.no || (ui.pre.t === 'check' && st.toCall) || (ui.pre.t === 'call' && st.toCall !== ui.pre.amt))) ui.pre = null;
+    const on = (t) => (ui.pre && ui.pre.t === t ? ' on' : '');
+    const call = st.toCall ? Math.min(st.toCall, st.stack) : 0;
+    return `<div class="btns prebtns">
+      <button class="danger${on('checkfold')}" data-a="pre" data-t="checkfold">${st.toCall ? 'Fold' : 'Check / Fold'}</button>
+      ${st.toCall ? `<button class="blue${on('call')}" data-a="pre" data-t="call" data-v="${st.toCall}">Call ${fmt(call)}</button>` : `<button class="blue${on('check')}" data-a="pre" data-t="check">Check</button>`}
+      <button class="primary${on('callany')}" data-a="pre" data-t="callany">Call Any</button></div>
+      ${ui.pre ? '<div class="prehint">ถึงตาแล้วแอปกดให้เอง · แตะอีกทีเพื่อยกเลิก</div>' : ''}`;
   }
 
   function actionBar(id) {
@@ -1842,6 +1877,10 @@
         break;
       }
       case 'raiseToggle': ui.raiseOpen = !ui.raiseOpen; render(); break;
+      case 'pre':
+        ui.pre = ui.pre && ui.pre.t === d.t ? null : { t: d.t, amt: Number(d.v) || 0, no: S.hand && S.hand.no };
+        render();
+        break;
       case 'quick': ui.raiseTo = Number(d.v); syncRaise(); break;
       case 'step': {
         const a = actorInfo(actorId());
