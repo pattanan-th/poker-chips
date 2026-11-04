@@ -791,8 +791,8 @@
     const meP = mine >= 0 ? seatInfo(seated[mine]) : null;
     return `<div class="ptable${dense ? ' dense' : ''}" style="height:${H}px;--k:${k.toFixed(3)};--ks:${ks.toFixed(3)}"><div class="rail"></div><div class="felt"></div>
       <div class="tcenter"><div class="pot">${potHtml}</div>
-        <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button>`
-          : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>'}<button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button></div>
+        <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>`
+          : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button><button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button>'}</div>
         ${tableLog(h, H > 620 ? 5 : H > 560 ? 4 : H > 480 ? 3 : 2)}
       </div>${seats}${meSeat ? myCardsAtSeat(meSeat[0] / W * 100, (meSeat[1] - 80 * k) / H * 100, meP.betAmt) : ''}</div>`;
   }
