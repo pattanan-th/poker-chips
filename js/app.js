@@ -999,18 +999,21 @@
       if (bigPot) {
         const at = 250 + w * 350 + n * 70 + 300;
         const who = pById(id);
-        if (id === myId) setTimeout(() => { chipRain(reduce); bigWin(who ? who.name : '', amt, true, reduce); }, at);
-        else setTimeout(() => { seatGlow(id); bigWin(who ? who.name : '', amt, false, reduce); }, at);
+        // the winning hand's name: shown cards, or our own hole cards; unknown when everyone else folded
+        let hand = h.shown && h.shown[id] ? h.shown[id].hand : null;
+        if (!hand && id === myId) { const hole = myHole(); const b = hole && h.board && h.board.length >= 3 ? Cards.bestFor(hole, h.board, h.game) : null; hand = b ? b.name : null; }
+        if (id === myId) setTimeout(() => { chipRain(reduce); bigWin(who ? who.name : '', amt, true, reduce, hand); }, at);
+        else setTimeout(() => { seatGlow(id); bigWin(who ? who.name : '', amt, false, reduce, hand); }, at);
       }
     });
   }
 
   const BIG_POT_BB = 50;
   // BIG WIN banner: full-screen burst with a counting amount for the winner, a slim banner for everyone else
-  function bigWin(name, amt, mine, reduce) {
+  function bigWin(name, amt, mine, reduce, hand) {
     const box = document.createElement('div');
     box.className = `bigwin ${mine ? 'mine' : 'other'}`;
-    box.innerHTML = `${mine ? '<div class="rays"></div>' : ''}<div class="bwin"><div class="bw1">${mine ? 'BIG WIN' : `🏆 ${esc(name)}`}</div><div class="bw2">+0</div></div>`;
+    box.innerHTML = `${mine ? '<div class="rays"></div>' : ''}<div class="bwin"><div class="bw1">${mine ? esc(hand || 'BIG WIN') : `🏆 ${esc(name)}${hand ? ` · ${esc(hand)}` : ''}`}</div><div class="bw2">+0</div></div>`;
     document.body.appendChild(box);
     Sfx.play('bigwin');
     const out = box.querySelector('.bw2');

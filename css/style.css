@@ -359,7 +359,7 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .bwin { position: relative; text-align: center; animation: bwpop .6s cubic-bezier(.2, 1.6, .4, 1); }
 .bw1 { font-weight: 900; letter-spacing: 2px; background: linear-gradient(#fff6c8, #f2c14e 55%, #c98a1a); -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 3px 0 #6b4300) drop-shadow(0 0 14px rgba(242, 193, 78, .8)); }
-.bigwin.mine .bw1 { font-size: 64px; }
+.bigwin.mine .bw1 { font-size: 40px; max-width: 92vw; line-height: 1.1; }
 .bigwin.mine .bw2 { font-size: 36px; }
 .bw2 { font-weight: 800; color: #fff; text-shadow: 0 2px 8px #000, 0 0 16px rgba(242, 193, 78, .9); }
 .bigwin.other .bwin { background: rgba(0, 0, 0, .7); border: 2px solid var(--gold); border-radius: 16px; padding: 6px 18px; box-shadow: 0 0 18px rgba(242, 193, 78, .6); }
