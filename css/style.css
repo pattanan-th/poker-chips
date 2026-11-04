@@ -321,5 +321,12 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .tm { font-size: 10px; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .tlog .tm { margin-right: 5px; }
 .tlog .more { font-size: 10px; color: var(--muted); text-decoration: underline; opacity: .8; }
+.emojis { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.emojis button { padding: 6px 0; font-size: 20px; background: #0a2e23; border: 1px solid var(--line); border-radius: 10px; }
+.emojis button.on, .emojis input.on { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold) inset; }
+.emojis input { grid-column: span 5; padding: 6px 8px; font-size: 16px; text-align: center; }
+.emojis .none { grid-column: span 3; font-size: 13px; }
+.seat .av.emo { font-size: 26px; }
+.pemo { margin-right: 4px; flex: none; }
 .tinfo { font-size: 12px; background: rgba(0, 0, 0, .65); border-radius: 99px; padding: 2px 10px; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
 .tinfo button { padding: 2px 8px; font-size: 12px; }

@@ -18,6 +18,15 @@
   // ?pid= lets several tabs on one device be different players (testing)
   const myId = params.get('pid') || store.get('pk:id') || (() => { const id = rid(); store.set('pk:id', id); return id; })();
   let myName = store.get('pk:name', '');
+  let myEmoji = store.get('pk:emoji', ''); // picture shown in the seat instead of the name's first letter
+  const EMOJIS = ['😎', '🤠', '🥷', '🦊', '🐯', '🐼', '🐸', '🐵', '👻', '🦄', '🔥', '💎', '🍀', '🎯', '👑', '💰'];
+  // keep one emoji (or one character): the first grapheme, so flags and skin tones stay whole
+  function cleanEmoji(v) {
+    const t = String(v || '').trim();
+    if (!t) return '';
+    const first = typeof Intl !== 'undefined' && Intl.Segmenter ? [...new Intl.Segmenter().segment(t)][0].segment : Array.from(t)[0];
+    return first.slice(0, 16);
+  }
 
   // ---------- app state ----------
   let role = null;        // 'host' | 'client'
@@ -105,8 +114,8 @@
           const name = String(msg.name || 'ผู้เล่น').slice(0, NAME_MAX);
           const p = pById(cid);
           if (!p && S.players.length >= seatLimit()) { net.send(cid, { t: 'full', max: seatLimit() }); setTimeout(() => net.kick(cid), 500); toast(`${name} เข้าไม่ได้ — ${fullMsg()}`); return; }
-          if (!p) { E.addPlayer(S, cid, name); saveHost(); toast(`${name} เข้าห้องแล้ว`, true); }
-          else if (p.name !== name) p.name = name;
+          if (!p) { E.addPlayer(S, cid, name); pById(cid).emoji = cleanEmoji(msg.emoji); saveHost(); toast(`${name} เข้าห้องแล้ว`, true); }
+          else { if (p.name !== name) p.name = name; if (msg.emoji != null) p.emoji = cleanEmoji(msg.emoji); }
           broadcast(); render();
         } else if (msg.t === 'cmd') {
           apply(msg.cmd, cid);
@@ -172,7 +181,7 @@
   }
   const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
-  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename', 'pdBet', 'show'];
+  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename', 'avatar', 'pdBet', 'show'];
   // Pok Deng: the banker runs the round from their own phone too
   const BANKER_CMDS = ['pdBet', 'pdDeal', 'pdReopen', 'pdSettle'];
 
@@ -248,9 +257,12 @@
         return;
       case 'move': return E.movePlayer(S, cmd.pid, cmd.dir);
       case 'rename': { const p = pById(cmd.pid); if (p) p.name = String(cmd.name).slice(0, NAME_MAX); return; }
+      case 'avatar': { const p = pById(cmd.pid); if (p) p.emoji = cleanEmoji(cmd.emoji); return; }
       case 'join':
         if (!pById(myId) && S.players.length >= seatLimit()) throw new Error(fullMsg());
-        return E.addPlayer(S, myId, myName);
+        E.addPlayer(S, myId, myName);
+        pById(myId).emoji = myEmoji;
+        return;
       case 'addBot': {
         if (isPD()) throw new Error('ป๊อกเด้งยังไม่มีบอท');
         if (S.players.length >= seatLimit()) throw new Error(fullMsg());
@@ -299,7 +311,7 @@
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
     hostLostAt = null; ui.roomNoted = false;
     rememberRoom(code, 'client', S);
-    net = Net.client(code, myId, myName, hello, {
+    net = Net.client(code, myId, myName, Object.assign({ emoji: myEmoji }, hello), {
       onStatus(st) {
         netStatus = st;
         if (st === 'online') hostLostAt = null;
@@ -499,6 +511,8 @@
       <div class="card">
         <label>ชื่อของคุณ</label>
         <input id="name" maxlength="${NAME_MAX}" value="${esc(myName)}" placeholder="เช่น โจโจ้" autocomplete="nickname">
+        <label>รูปแทนตัว <span class="small">(ไม่เลือก = ใช้ตัวแรกของชื่อ)</span></label>
+        ${emojiPicker()}
       </div>
       ${resume ? `<button class="primary" style="width:100%" data-a="resume" data-code="${esc(resume)}">กลับเข้าห้องเดิม ${esc(resume)} (เจ้ามือ)</button>` : ''}
       ${recentRooms()}
@@ -516,6 +530,20 @@
       </div>
     </div>`;
   }
+
+  function emojiPicker() {
+    const custom = myEmoji && !EMOJIS.includes(myEmoji) ? myEmoji : '';
+    return `<div class="emojis">${EMOJIS.map((e) => `<button class="${myEmoji === e ? 'on' : ''}" data-a="pickEmoji" data-v="${e}">${e}</button>`).join('')}
+      <input id="emojiIn" value="${esc(custom)}" placeholder="อื่นๆ" aria-label="พิมพ์อีโมจิเอง" class="${custom ? 'on' : ''}">
+      <button class="none ${myEmoji ? '' : 'on'}" data-a="pickEmoji" data-v="">ไม่ใช้</button></div>`;
+  }
+  function setEmoji(v) {
+    myEmoji = cleanEmoji(v);
+    store.set('pk:emoji', myEmoji);
+    document.querySelectorAll('.emojis [data-a=pickEmoji]').forEach((b) => b.classList.toggle('on', b.dataset.v === myEmoji));
+    if (role && S && pById(myId)) send({ c: 'avatar', pid: myId, emoji: myEmoji });
+  }
+  const avatarOf = (p) => esc(p.emoji || Array.from(p.name.trim())[0] || '?');
 
   function recentRooms() {
     const rooms = store.get(ROOMS_KEY, []);
@@ -780,7 +808,7 @@
       // beside the avatar on side seats (the avatar is the top part of the seat), toward the middle elsewhere
       const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach - (side ? 24 * ks : 0))}">${fmt(s.betAmt)}</span>` : '';
       return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="${pct(x, y)}">
-          <div class="av">${esc(Array.from(p.name.trim())[0] || '?')}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
+          <div class="av${p.emoji ? ' emo' : ''}">${avatarOf(p)}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
           <div class="snm">${nameHtml(p.name)}</div>
           <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${s.wonAmt ? ` <span class="won">+${fmt(s.wonAmt)}</span>` : ''}</div>
           <div class="sst">${esc(s.status)}${s.clock}</div>
@@ -871,7 +899,7 @@
     const won = s.wonAmt ? `<div class="won">+${fmt(s.wonAmt)}</div>` : '';
     return `<div class="pl ${s.cls}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
-      <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${s.badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(s.status)}${s.clock}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
+      <div class="nm"><b>${p.emoji ? `<span class="pemo">${esc(p.emoji)}</span>` : ''}${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${s.badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(s.status)}${s.clock}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
       <div class="stack ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${bet ? '<br>' + bet : ''}${won}</div>
     </div>`;
   }
@@ -1204,7 +1232,7 @@
   // ---------- sheets ----------
   function sheet() {
     if (!ui.sheet) return '';
-    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet, ranks: ranksSheet }[ui.sheet];
+    const body = { menu: menuSheet, invite: inviteSheet, settings: settingsSheet, players: playersSheet, summary: summarySheet, log: logSheet, hands: handsSheet, handoff: handoffSheet, pdBanker: pdBankerSheet, ranks: ranksSheet, avatar: avatarSheet }[ui.sheet];
     if (!body) return '';
     const [title, html, action] = body();
     return `<div class="sheet-bg" data-a="closeSheet" data-sheet="${ui.sheet}"><div class="sheet" data-stop="1">
@@ -1221,6 +1249,7 @@
         <button data-a="sheet" data-v="summary">📊 สรุปประจำโต๊ะ</button>
         <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
         <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
+        ${me ? '<button data-a="sheet" data-v="avatar">😀 เปลี่ยนรูปแทนตัว</button>' : ''}
         <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
         <button data-a="view" data-v="${ui.view === 'table' ? 'list' : 'table'}">${ui.view === 'table' ? '📋 เปลี่ยนเป็นมุมมองรายการ' : '🃏 เปลี่ยนเป็นมุมมองโต๊ะ'}</button>
         ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
@@ -1239,6 +1268,7 @@
       <button data-a="sheet" data-v="summary">📊 สรุปผล / เงิน</button>
       <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
       <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
+      ${me ? '<button data-a="sheet" data-v="avatar">😀 เปลี่ยนรูปแทนตัว</button>' : ''}
       <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
         <button data-a="view" data-v="${ui.view === 'table' ? 'list' : 'table'}">${ui.view === 'table' ? '📋 เปลี่ยนเป็นมุมมองรายการ' : '🃏 เปลี่ยนเป็นมุมมองโต๊ะ'}</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
@@ -1264,6 +1294,10 @@
     return me.left
       ? `<button class="primary" data-a="cmd" data-c="stand" data-pid="${esc(me.id)}" data-v="">🪑 นั่งกลับ (${chipWord()} ${chips(me)})</button>`
       : `<button data-a="stand" data-pid="${esc(me.id)}">🚪 ลุกจากโต๊ะ (${credit() ? 'ยอด' : 'เก็บชิป'} ${chips(me)})</button>`;
+  }
+
+  function avatarSheet() {
+    return ['รูปแทนตัว', `<p class="muted small" style="margin-top:0">แตะเพื่อเปลี่ยนได้ทันที · ไม่ใช้ = ตัวแรกของชื่อ</p>${emojiPicker()}`];
   }
 
   function ranksSheet() {
@@ -1545,6 +1579,7 @@
     if (e.target.id === 'raiseRange') { ui.raiseTo = Number(e.target.value); syncRaise(); }
     if (e.target.id === 'raiseInput') { ui.raiseTo = Math.floor(Number(e.target.value) || 0); syncRaise(true); }
     if (e.target.id === 'pdBetInput') { ui.pdDraft = e.target.value; syncPdBet(); }
+    if (e.target.id === 'emojiIn') { const v = cleanEmoji(e.target.value); e.target.classList.toggle('on', !!v); setEmoji(v); }
     const k = e.target.dataset && e.target.dataset.k;
     if (k === 'sb') e.target.dataset.manual = '1';
     if (k === 'bb') {
@@ -1605,7 +1640,7 @@
       case 'create': {
         if (!readName()) return;
         const g = E.newGame({ mode: createMode });
-        if (document.getElementById('plays').checked) E.addPlayer(g, myId, myName);
+        if (document.getElementById('plays').checked) { E.addPlayer(g, myId, myName); g.players[g.players.length - 1].emoji = myEmoji; }
         if (createMode === 'pokdeng') PD.init(g);
         startHost(Net.randomCode(), g, [], false);
         ui.sheet = 'settings'; render();
@@ -1779,6 +1814,7 @@
         document.querySelectorAll('#cardsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
         break;
       case 'mute': Sfx.setMuted(!Sfx.isMuted()); render(); break;
+      case 'pickEmoji': { const i = document.getElementById('emojiIn'); if (i) { i.value = ''; i.classList.remove('on'); } setEmoji(d.v); break; }
       case 'view': ui.view = d.v; store.set('pk:view', d.v); ui.sheet = null; render(); break;
       case 'holeHide': ui.holeHidden = !ui.holeHidden; render(); break;
       case 'creditMode': document.getElementById('s_credit').value = d.v; markCredit(); break;
