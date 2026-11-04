@@ -44,15 +44,22 @@
   let clockSkew = 0;      // client: host time - local time
   let kicked = false;
   let hostLostAt = null;  // client: when the connection to the host dropped
-  const ui = { view: store.get('pk:view', 'table'), raiseOpen: false, raiseTo: 0, sheet: null, proxy: false, sd: null, sdHand: 0, wasMyTurn: false };
+  const ui = { view: store.get('pk:view', 'table'), raiseOpen: false, raiseTo: 0, sheet: null, proxy: false, sd: null, sdHand: 0, wasMyTurn: false, bb: store.get('pk:unit', '') === 'bb' };
 
   const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+  // amounts shown as multiples of the big blind when the player switches the unit to BB (never for Pok Deng)
+  const unitBB = () => !!(ui.bb && S && !isPD() && E.blinds(S).bb > 0);
+  const fb = (n) => {
+    if (!unitBB()) return fmt(n);
+    const x = Math.round((Number(n || 0) / E.blinds(S).bb) * 10) / 10;
+    return `${x.toLocaleString('en-US')}BB`;
+  };
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const pById = (id) => S && S.players.find((p) => p.id === id);
   // cash without buy-in: show each player's +/- balance instead of a chip count
   const credit = () => !!S && E.isCredit(S);
   const balance = (p) => p.stack - E.CREDIT;
-  const chips = (p) => (credit() ? signedFmt(balance(p)) : fmt(p.stack));
+  const chips = (p) => (credit() ? signedFmt(balance(p)) : fb(p.stack));
   const chipWord = () => (credit() ? 'ยอด' : 'ชิป');
   const now = () => Date.now() + clockSkew;
   const isHost = () => role === 'host';
@@ -710,7 +717,7 @@
 
   function lobby() {
     const list = S.players.map((p, i) => `<div class="pl"><span class="muted">${i + 1}</span><div class="nm"><b>${nameHtml(p.name)}${p.id === myId ? ' <span class="me-tag">(คุณ)</span>' : ''}</b></div>
-      <span class="dot ${isOnline(p.id) ? 'on' : ''}"></span><div class="stack">${isPD() ? (S.pd && S.pd.bankerId === p.id ? '🏦' : '') : credit() ? '' : fmt(p.stack)}</div></div>`).join('');
+      <span class="dot ${isOnline(p.id) ? 'on' : ''}"></span><div class="stack">${isPD() ? (S.pd && S.pd.bankerId === p.id ? '🏦' : '') : credit() ? '' : fb(p.stack)}</div></div>`).join('');
     return `<div class="card center">
       <div class="muted small">สแกนเพื่อเข้าห้อง</div>
       <div class="qr">${qrSvg(joinUrl())}</div>
@@ -786,13 +793,13 @@
     if (!h) potHtml = `<div class="lbl">พร้อมเริ่มมือแรก</div>`;
     else if (h.done) {
       const total = Object.values(h.result || {}).reduce((a, b) => a + b, 0);
-      potHtml = `<div class="lbl">มือที่ ${h.no} จบแล้ว</div><div class="amt">${fmt(total)}</div>
-        <div class="hint">${h.voided ? 'ยกเลิกมือนี้ — คืนชิปทุกคนแล้ว' : ''}${Object.entries(h.result || {}).map(([id, a]) => `${esc((pById(id) || {}).name)} ได้ ${fmt(a)}`).join(' · ')}</div>`;
+      potHtml = `<div class="lbl">มือที่ ${h.no} จบแล้ว</div><div class="amt" data-a="unit" title="แตะเพื่อสลับชิป/BB">${fb(total)}</div>
+        <div class="hint">${h.voided ? 'ยกเลิกมือนี้ — คืนชิปทุกคนแล้ว' : ''}${Object.entries(h.result || {}).map(([id, a]) => `${esc((pById(id) || {}).name)} ได้ ${fb(a)}`).join(' · ')}</div>`;
     } else {
       const hint = h.appCards ? '' : h.street === 'showdown' ? (h.runout ? 'เปิดไพ่กลางให้ครบ 5 ใบ แล้วหงายไพ่' : 'หงายไพ่ — เจ้ามือเลือกผู้ชนะ')
         : { flop: 'ดีลเลอร์เปิด Flop 3 ใบ', turn: 'ดีลเลอร์เปิด Turn', river: 'ดีลเลอร์เปิด River', preflop: h.game === 'short' ? 'แจกไพ่คนละ 2 ใบ (เอาไพ่ 2–5 ออก เหลือ 36 ใบ)' : `แจกไพ่คนละ ${h.game === 'plo' ? 4 : 2} ใบ` }[h.street];
-      const side = h.pots && h.pots.length > 1 ? `<div class="sidepots">${h.pots.map((p, i) => `${i ? 'Side ' + i : 'Main'} ${fmt(p.amount)}`).join(' · ')}</div>` : '';
-      potHtml = `<div class="lbl">Pot · มือที่ ${h.no}</div><div class="amt">${fmt(pot)}</div>${side}
+      const side = h.pots && h.pots.length > 1 ? `<div class="sidepots">${h.pots.map((p, i) => `${i ? 'Side ' + i : 'Main'} ${fb(p.amount)}`).join(' · ')}</div>` : '';
+      potHtml = `<div class="lbl">Pot · มือที่ ${h.no}</div><div class="amt" data-a="unit" title="แตะเพื่อสลับชิป/BB">${fb(pot)}</div>${side}
         <span class="street">${E.streetName(h.street)}${GAME_TAG[h.game] ? ' · ' + GAME_TAG[h.game] : ''}</span>${hint ? `<div class="hint">${hint}</div>` : ''}`;
     }
     if (h && h.appCards) potHtml += boardHtml(h.board || []);
@@ -910,12 +917,12 @@
       // side seats share their height with the middle of the table, so their bet stays in the seat;
       // top and bottom seats put it toward the middle
       // straight up/down from the seat, just past its labels, never diagonally into the middle
-      const bet = s.betAmt && p.id !== myId && !side ? `<span class="tbet" style="${pct(x, y + Math.sign(vy) * reach)}">${fmt(s.betAmt)}</span>` : '';
-      const seatBet = s.betAmt && p.id !== myId && side ? `<div><span class="tbet inline">${fmt(s.betAmt)}</span></div>` : '';
+      const bet = s.betAmt && p.id !== myId && !side ? `<span class="tbet" style="${pct(x, y + Math.sign(vy) * reach)}">${fb(s.betAmt)}</span>` : '';
+      const seatBet = s.betAmt && p.id !== myId && side ? `<div><span class="tbet inline">${fb(s.betAmt)}</span></div>` : '';
       return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" data-pid="${esc(p.id)}" style="${pct(x, y)}">
           <div class="av${p.emoji ? ' emo' : ''}">${avatarOf(p)}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span></div>
           <div class="snm">${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${nameHtml(p.name)}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
-          <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${s.wonAmt ? ` <span class="won">+${fmt(s.wonAmt)}</span>` : ''}</div>
+          <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${s.wonAmt ? ` <span class="won">+${fb(s.wonAmt)}</span>` : ''}</div>
           ${seatBet}${shown ? '' : `<div class="sst">${esc(s.status)}${s.clock}</div>`}
           ${shown ? `<div class="sshown${y < cy ? ' inl' : ''}">${cardsHtml(shown.cards, 'sm', `s${h.no}${p.id}`)}${shown.hand ? `<div>${esc(shown.hand)}</div>` : ''}</div>` : ''}
         </div>${bet}`;
@@ -940,7 +947,7 @@
       if (a.st !== st) { if (st) lines.push(`<i>— ${E.streetName(a.st)} —</i>`); st = a.st; }
       lines.push(`${tmHtml(a.at)}${a.id ? `<b>${nm(a.id)}</b> ` : ''}${esc(a.t)}`);
     });
-    if (h.done && !h.voided) Object.entries(h.result || {}).forEach(([id, amt]) => lines.push(`${tmHtml(h.doneAt)}🏆 <b>${nm(id)}</b> ได้ ${fmt(amt)}`));
+    if (h.done && !h.voided) Object.entries(h.result || {}).forEach(([id, amt]) => lines.push(`${tmHtml(h.doneAt)}🏆 <b>${nm(id)}</b> ได้ ${fb(amt)}`));
     const recent = lines.slice(-max).reverse();
     const fade = [1, 0.62, 0.42, 0.28, 0.18];
     return `<div class="tlog" data-a="sheet" data-v="hands">${recent.map((l, i) => `<div style="opacity:${fade[i] || 0.15}">${l}</div>`).join('')}
@@ -956,7 +963,7 @@
   }
   function myCardsAtSeat(xPct, yPct, myBet) {
     const h = S.hand; const cards = myHole();
-    const bet = myBet ? `<span class="tbet inline">${fmt(myBet)}</span>` : '';
+    const bet = myBet ? `<span class="tbet inline">${fb(myBet)}</span>` : '';
     if (!h || !cards) return bet ? `<div class="tmycards" style="left:${xPct.toFixed(2)}%;top:${(yPct + 6).toFixed(2)}%">${bet}</div>` : '';
     const folded = h.folded[myId];
     const made = !folded && h.board && h.board.length >= 3 ? Cards.bestFor(cards, h.board, h.game) : null;
@@ -1010,7 +1017,7 @@
       setTimeout(() => {
         const pop = document.createElement('div');
         pop.className = 'winpop';
-        pop.textContent = `+${fmt(amt)}`;
+        pop.textContent = `+${fb(amt)}`;
         pop.style.left = `${tx}px`; pop.style.top = `${ty - 18}px`;
         document.body.appendChild(pop);
         setTimeout(() => pop.remove(), 1600);
@@ -1040,7 +1047,7 @@
     const dur = reduce ? 0 : 1400; const t0 = performance.now();
     const step = (t) => {
       const k = dur ? Math.min(1, (t - t0) / dur) : 1;
-      out.textContent = `+${fmt(Math.round(amt * (1 - Math.pow(1 - k, 3))))}`;
+      out.textContent = `+${fb(Math.round(amt * (1 - Math.pow(1 - k, 3))))}`;
       if (k < 1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -1113,8 +1120,8 @@
   function playerRow(p) {
     const h = S.hand;
     const s = seatInfo(p);
-    const bet = s.betAmt ? `<span class="bet">${fmt(s.betAmt)}</span>` : '';
-    const won = s.wonAmt ? `<div class="won">+${fmt(s.wonAmt)}</div>` : '';
+    const bet = s.betAmt ? `<span class="bet">${fb(s.betAmt)}</span>` : '';
+    const won = s.wonAmt ? `<div class="won">+${fb(s.wonAmt)}</div>` : '';
     return `<div class="pl ${s.cls}" data-pid="${esc(p.id)}">
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
       <div class="nm"><b>${p.emoji ? `<span class="pemo">${esc(p.emoji)}</span>` : ''}${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="เจ้ามือ">👑</span>' : ''}${s.badges.join('')}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b><span class="st">${esc(s.status)}${s.clock}</span>${h && h.shown && h.shown[p.id] ? `<span class="shown">${cardsHtml(h.shown[p.id].cards, 'sm', `s${h.no}${p.id}`)} ${esc(h.shown[p.id].hand)}</span>` : ''}</div>
@@ -1203,7 +1210,7 @@
     if (S.hand.appCards) return '';
     const h = S.hand;
     if (!isHost()) return `<div class="card center muted">รอเจ้ามือเลือกผู้ชนะ…</div>`;
-    const pots = h.pots.map((pot, i) => `<div class="pot-pick"><div class="h">${h.pots.length > 1 ? (i ? `Side pot ${i}` : 'Main pot') : 'Pot'} · ${fmt(pot.amount)} — แตะผู้ชนะ (เสมอเลือกได้หลายคน)</div>
+    const pots = h.pots.map((pot, i) => `<div class="pot-pick"><div class="h">${h.pots.length > 1 ? (i ? `Side pot ${i}` : 'Main pot') : 'Pot'} · ${fb(pot.amount)} — แตะผู้ชนะ (เสมอเลือกได้หลายคน)</div>
       <div class="pick">${pot.elig.map((id) => `<button class="${ui.sd[i].includes(id) ? 'on' : ''}" data-a="sd" data-i="${i}" data-id="${esc(id)}">${esc(pById(id).name)}</button>`).join('')}</div></div>`).join('');
     const ready = ui.sd.every((w) => w.length);
     return `<div class="card"><h2>เลือกผู้ชนะ</h2>${pots}
@@ -1222,7 +1229,7 @@
     let inner = '';
     if (!h || h.done) {
       const me = pById(myId);
-      const rebuy = me && S.settings.mode === 'cash' && !credit() && me.stack === 0 ? `<button class="blue" data-a="cmd" data-c="rebuy" data-pid="${esc(myId)}">Rebuy +${fmt(S.settings.startStack)}</button>` : '';
+      const rebuy = me && S.settings.mode === 'cash' && !credit() && me.stack === 0 ? `<button class="blue" data-a="cmd" data-c="rebuy" data-pid="${esc(myId)}">Rebuy +${fb(S.settings.startStack)}</button>` : '';
       if (isHost()) {
         const over = S.settings.mode === 'tournament' && E.eligible(S).length < 2 && S.handNo > 0;
         inner = over ? `<div class="grid2">${rebuy || ''}<button class="primary" data-a="sheet" data-v="summary">🏆 สรุปผล</button></div>`
@@ -1264,7 +1271,7 @@
     const call = st.toCall ? Math.min(st.toCall, st.stack) : 0;
     return `<div class="prelabel">${ui.pre ? '✅ เลือกไว้แล้ว — ถึงตาแอปกดให้เอง' : '⏳ กดรอไว้ก่อนได้ · ถึงตาแล้วแอปกดให้'}</div><div class="btns prebtns">
       <button class="danger${on('checkfold')}" data-a="pre" data-t="checkfold">${on('checkfold') ? '✓ ' : ''}${st.toCall ? 'Fold' : 'Check / Fold'}</button>
-      ${st.toCall ? `<button class="blue${on('call')}" data-a="pre" data-t="call" data-v="${st.toCall}">${on('call') ? '✓ ' : ''}Call ${fmt(call)}</button>` : `<button class="blue${on('check')}" data-a="pre" data-t="check">${on('check') ? '✓ ' : ''}Check</button>`}
+      ${st.toCall ? `<button class="blue${on('call')}" data-a="pre" data-t="call" data-v="${st.toCall}">${on('call') ? '✓ ' : ''}Call ${fb(call)}</button>` : `<button class="blue${on('check')}" data-a="pre" data-t="check">${on('check') ? '✓ ' : ''}Check</button>`}
       <button class="primary${on('callany')}" data-a="pre" data-t="callany">${on('callany') ? '✓ ' : ''}Call Any</button></div>
 `;
   }
@@ -1274,7 +1281,7 @@
     if (!ui.typingRaise && (!ui.raiseTo || ui.raiseTo < a.minTo || ui.raiseTo > a.maxTo)) ui.raiseTo = a.minTo;
     const proxy = id !== myId;
     const callBtn = a.toCall > 0
-      ? `<button class="blue" data-a="act" data-t="call">${a.toCall >= a.p.stack ? 'All-in ' + fmt(a.p.stack) : 'Call ' + fmt(a.toCall)}</button>`
+      ? `<button class="blue" data-a="act" data-t="call">${a.toCall >= a.p.stack ? 'All-in ' + fb(a.p.stack) : 'Call ' + fb(a.toCall)}</button>`
       : `<button class="blue" data-a="act" data-t="check">Check</button>`;
     const raiseBtn = a.canRaise
       ? `<button class="primary" data-a="raiseToggle">${a.isBet ? 'Bet' : 'Raise'} ${ui.raiseOpen ? '▾' : '▸'}</button>`
@@ -1289,16 +1296,16 @@
       raise = `<div class="raise">
         <div class="amt"><span class="muted small">${a.isBet ? 'Bet' : 'Raise to'}</span>
           <input id="raiseInput" type="number" inputmode="numeric" enterkeyhint="done" min="${a.minTo}" max="${a.maxTo}" value="${ui.raiseTo}" aria-label="จำนวนชิป"></div>
-        <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fmt(a.minTo)}${a.capped ? ` · สูงสุด ${fmt(a.maxTo)} (Pot)` : credit() ? ' · ไม่จำกัดสูงสุด' : ` · สูงสุด ${fmt(a.maxTo)} (All-in)`}</div>
+        <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fb(a.minTo)}${a.capped ? ` · สูงสุด ${fb(a.maxTo)} (Pot)` : credit() ? ' · ไม่จำกัดสูงสุด' : ` · สูงสุด ${fb(a.maxTo)} (All-in)`}</div>
         <div class="row"><button class="sm" style="flex:none" data-a="step" data-v="${-step}">−</button>
           <input type="range" id="raiseRange" min="${a.minTo}" max="${rangeMax}" step="1" value="${ui.raiseTo}">
           <button class="sm" style="flex:none" data-a="step" data-v="${step}">+</button></div>
         <div class="quick">${quick}</div>
-        <button class="primary" style="width:100%;padding:16px" data-a="act" data-t="raise" id="raiseGo">ยืนยัน ${a.isBet ? 'Bet' : 'Raise to'} ${fmt(ui.raiseTo)}</button>
+        <button class="primary" style="width:100%;padding:16px" data-a="act" data-t="raise" id="raiseGo">ยืนยัน ${a.isBet ? 'Bet' : 'Raise to'} ${fb(ui.raiseTo)}</button>
       </div>`;
     }
     return `<div class="actbar"><div class="in">
-      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : `<b>ถึงตาคุณ!</b>${turnEnds(S.hand) ? ` <span class="tclock">⏱ ${cdHtml(turnEnds(S.hand))}</span>` : ''}`}</span><span>${!proxy && myHole() && !ui.holeHidden ? cardsHtml(myHole(), 'sm') + ' ' : ''}${chipWord()} ${chips(a.p)}${a.toCall ? ` · ต้อง call ${fmt(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
+      <div class="who"><span>${proxy ? `เจ้ามือกดแทน <b>${esc(a.p.name)}</b> · <u data-a="proxy">ยกเลิก</u>` : `<b>ถึงตาคุณ!</b>${turnEnds(S.hand) ? ` <span class="tclock">⏱ ${cdHtml(turnEnds(S.hand))}</span>` : ''}`}</span><span>${!proxy && myHole() && !ui.holeHidden ? cardsHtml(myHole(), 'sm') + ' ' : ''}${chipWord()} ${chips(a.p)}${a.toCall ? ` · ต้อง call ${fb(Math.min(a.toCall, a.p.stack))}` : ''}</span></div>
       <div class="btns"><button class="danger" data-a="act" data-t="fold">Fold</button>${callBtn}${raiseBtn}</div>
       ${raise}
     </div></div>`;
@@ -1309,7 +1316,7 @@
   function isPD() { return !!S && S.settings.mode === 'pokdeng'; }
   // in Pok Deng "เจ้ามือ" means the banker, so the phone that runs the room gets another name
   function hostWord() { return isPD() ? 'คนคุมห้อง' : 'เจ้ามือ'; }
-  function signedFmt(n) { return `${n > 0 ? '+' : ''}${fmt(n)}`; }
+  function signedFmt(n) { return `${n > 0 ? '+' : ''}${fb(n)}`; }
   const toneOf = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
   const canRunRound = () => isHost() || (S.pd && S.pd.bankerId === myId);
   const RES_LABEL = { win: 'ชนะ', lose: 'แพ้', tie: 'เสมอ' };
@@ -1520,6 +1527,7 @@
         <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
         <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
         ${me ? '<button data-a="sheet" data-v="avatar">😀 เปลี่ยนรูปแทนตัว</button>' : ''}
+        <button data-a="unit">🔢 หน่วยชิป: ${ui.bb ? 'BB (บิ๊กบลายด์)' : 'ชิป'} · แตะเพื่อสลับ</button>
         <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
         <button data-a="view" data-v="${ui.view === 'table' ? 'list' : 'table'}">${ui.view === 'table' ? '📋 เปลี่ยนเป็นมุมมองรายการ' : '🃏 เปลี่ยนเป็นมุมมองโต๊ะ'}</button>
         ${me ? `${standButton(me)}${me.left ? '' : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="${me.sitOut ? '' : '1'}">${me.sitOut ? '▶ กลับมาเล่น' : '⏸ พักโต๊ะ (ข้ามมือถัดไป)'}</button>`}
@@ -1539,7 +1547,8 @@
       <button data-a="sheet" data-v="hands">🃏 ประวัติรายมือ</button>
       <button data-a="sheet" data-v="ranks">🏆 อันดับไพ่</button>
       ${me ? '<button data-a="sheet" data-v="avatar">😀 เปลี่ยนรูปแทนตัว</button>' : ''}
-      <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
+      <button data-a="unit">🔢 หน่วยชิป: ${ui.bb ? 'BB (บิ๊กบลายด์)' : 'ชิป'} · แตะเพื่อสลับ</button>
+        <button data-a="mute">${Sfx.isMuted() ? '🔇 เสียงเอฟเฟกต์: ปิด (แตะเพื่อเปิด)' : '🔊 เสียงเอฟเฟกต์: เปิด (แตะเพื่อปิด)'}</button>
         <button data-a="view" data-v="${ui.view === 'table' ? 'list' : 'table'}">${ui.view === 'table' ? '📋 เปลี่ยนเป็นมุมมองรายการ' : '🃏 เปลี่ยนเป็นมุมมองโต๊ะ'}</button>
       ${me ? standButton(me) : `<button data-a="hostJoin">🙋 ให้เจ้ามือร่วมเล่นด้วย</button>`}
       <button data-a="goHome">🏠 กลับหน้าแรก (เก็บห้องไว้)</button>
@@ -1823,13 +1832,13 @@
         <div class="muted small">Blinds ${fmt(cur.blinds.sb)}/${fmt(cur.blinds.bb)}${cur.blinds.ante ? ` ante ${fmt(cur.blinds.ante)}` : ''} · Dealer ${esc((pById(cur.btn) || {}).name || '?')} · Pot ${fmt(E.potTotal(cur))}</div>
         ${cur.appCards && cur.board && cur.board.length ? `<div class="hst"><b>Board</b> ${cardsHtml(cur.board, 'sm')}</div>` : ''}
         ${actionLines(cur, (id) => esc((pById(id) || {}).name || '?'))}</details>` : '';
-    const signed = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : 'muted'}">${n > 0 ? '+' : ''}${fmt(n)}</span>`;
+    const signed = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : 'muted'}">${n > 0 ? '+' : ''}${fb(n)}</span>`;
     const items = hs.map((h, i) => {
       const nm = (id) => esc(h.names[id] || (pById(id) || {}).name || '?');
       const winners = h.ids.filter((id) => h.delta[id] > 0).map((id) => `${nm(id)} ${signed(h.delta[id])}`).join(', ');
       const mine = h.delta[myId] != null ? ` · คุณ ${signed(h.delta[myId])}` : '';
       const streets = actionLines(h, nm);
-      const pots = h.pots.map((p, j) => `${h.pots.length > 1 ? (j ? `Side ${j}` : 'Main') : 'Pot'} ${fmt(p.amount)} → ${p.winners.map(nm).join(' + ')}`).join(' · ');
+      const pots = h.pots.map((p, j) => `${h.pots.length > 1 ? (j ? `Side ${j}` : 'Main') : 'Pot'} ${fb(p.amount)} → ${p.winners.map(nm).join(' + ')}`).join(' · ');
       const ended = h.street === 'showdown' ? (h.runout ? 'All-in showdown' : 'Showdown') : `จบที่ ${E.streetName(h.street)} (คนอื่น Fold)`;
       const deltas = h.ids.slice().sort((a, b) => h.delta[b] - h.delta[a]).map((id) => `<span>${nm(id)} ${signed(h.delta[id])}</span>`).join('');
       return `<details class="hand" ${i === 0 && !cur ? 'open' : ''}><summary><b>มือที่ ${h.no}</b>${h.actions[0] && h.actions[0].at ? ` <span class="tm">${clockAt(h.actions[0].at)}</span>` : ''} · ${winners || '-'}${mine}</summary>
@@ -1941,7 +1950,7 @@
     document.getElementById('raiseHint').classList.toggle('bad', !ok);
     const g = document.getElementById('raiseGo');
     g.disabled = !ok;
-    g.textContent = g.textContent.replace(/[\d,]*$/, ok ? fmt(ui.raiseTo) : '');
+    g.textContent = g.textContent.replace(/[\d,.]*(?:BB)?$/, ok ? fb(ui.raiseTo) : '');
   }
 
   document.addEventListener('click', (e) => {
@@ -2136,6 +2145,7 @@
         document.querySelectorAll('#cardsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
         break;
       case 'mute': Sfx.setMuted(!Sfx.isMuted()); render(); break;
+      case 'unit': ui.bb = !ui.bb; store.set('pk:unit', ui.bb ? 'bb' : 'chip'); render(); break;
       case 'randName': {
         const i = document.getElementById('name');
         const pool = RANDOM_NAMES.filter((n) => n !== i.value.trim());
