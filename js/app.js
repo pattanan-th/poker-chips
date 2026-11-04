@@ -790,8 +790,9 @@
   // The box is sized to the phone so the table, my cards and the action bar fit on one screen.
   function tableBox() {
     const W = Math.min(window.innerWidth, 560) - 24;
-    const top = (document.querySelector('.topbar') || { offsetHeight: 52 }).offsetHeight;
-    const H = Math.round(Math.max(380, Math.min(window.innerHeight - top - (ui.actbarH || 150) - 14, W * 1.9)));
+    // where the table starts: below the top bar and any banner (stood up, host lost, time up)
+    const top = ui.tableTop || (document.querySelector('.topbar') || { offsetHeight: 52 }).offsetHeight + 16;
+    const H = Math.round(Math.max(340, Math.min(window.innerHeight - top - (ui.actbarH || 150) - 10, W * 1.9)));
     return { W, H };
   }
 
@@ -935,7 +936,8 @@
     if (ui.view !== 'table' || ui.raiseOpen || !document.querySelector('.ptable')) return;
     const bar = document.querySelector('.actbar');
     const hgt = bar ? bar.offsetHeight : 0;
-    if (Math.abs(hgt - (ui.actbarH || 150)) > 8) { ui.actbarH = hgt; render(); }
+    const top = Math.round(document.querySelector('.ptable').getBoundingClientRect().top + window.scrollY);
+    if (Math.abs(hgt - (ui.actbarH || 150)) > 8 || Math.abs(top - (ui.tableTop || 0)) > 8) { ui.actbarH = hgt; ui.tableTop = top; render(); }
   }
   window.addEventListener('resize', () => { if (ui.view === 'table' && document.querySelector('.ptable')) render(); });
 
