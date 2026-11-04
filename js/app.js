@@ -184,6 +184,7 @@
         if (!hist.length) throw new Error('ไม่มีอะไรให้ย้อน');
         S = JSON.parse(hist.pop());
         S.hostId = myId; // snapshots taken before a handoff name the previous host
+        botHold = Date.now() + 5000;
         toast('ย้อนกลับ 1 ขั้นแล้ว', true);
       } else {
         before = JSON.stringify(S);
@@ -228,6 +229,19 @@
       case 'move': return E.movePlayer(S, cmd.pid, cmd.dir);
       case 'rename': { const p = pById(cmd.pid); if (p) p.name = String(cmd.name).slice(0, NAME_MAX); return; }
       case 'join': return E.addPlayer(S, myId, myName);
+      case 'addBot': {
+        if (isPD()) throw new Error('ป๊อกเด้งยังไม่มีบอท');
+        if (!S.settings.appCards) {
+          if (S.hand && !S.hand.done) throw new Error('บอทต้องใช้โหมดแอปแจกไพ่ — เพิ่มได้หลังจบมือ');
+          S.settings.appCards = true; // a bot can't hold physical cards
+        }
+        const used = S.players.filter((p) => p.bot).map((p) => p.botNo);
+        let n = 1; while (used.includes(n)) n++;
+        const id = 'bot-' + rid();
+        E.addPlayer(S, id, `🤖 บอท ${n}`);
+        Object.assign(pById(id), { bot: true, botNo: n });
+        return;
+      }
       case 'pause': return E.setPaused(S, cmd.v, t);
       case 'level': {
         const n = Math.max(0, Math.min(S.settings.levels.length - 1, S.level + cmd.d));
@@ -238,6 +252,7 @@
         const old = S.settings;
         if (S.hand && !S.hand.done && cmd.settings.game != null && cmd.settings.game !== (old.game || 'nlh')) throw new Error('เปลี่ยนเกมได้หลังจบมือ');
         if (S.hand && !S.hand.done && cmd.settings.appCards != null && !!cmd.settings.appCards !== !!old.appCards) throw new Error('เปลี่ยนแบบไพ่ได้หลังจบมือ');
+        if (cmd.settings.appCards === false && S.players.some((p) => p.bot)) throw new Error('บอทเล่นได้เฉพาะโหมดแอปแจกไพ่ — ลบบอทออกก่อน');
         S.settings = Object.assign({}, old, cmd.settings);
         if (S.handNo > 0) S.settings.credit = !!old.credit; // can't switch buy-in style mid-game
         else if (S.settings.startStack !== old.startStack || !!S.settings.credit !== !!old.credit || S.settings.mode !== old.mode) E.resetStacks(S);
@@ -305,6 +320,49 @@
     return null;
   }
 
+  // ---------- bots (host only) ----------
+  let botTimer = null;
+  let botHold = 0; // after an undo, bots wait so the host can keep stepping back
+
+  function botTick() {
+    if (!isHost() || botTimer || !S || isPD()) return;
+    const h = S.hand;
+    if (!h || h.done || !h.toAct || !(pById(h.toAct) || {}).bot) return;
+    const id = h.toAct; const key = `${h.no}|${h.actions.length}`;
+    botTimer = setTimeout(() => {
+      botTimer = null;
+      const h2 = S && S.hand;
+      if (!isHost() || !h2 || h2.done || h2.toAct !== id || `${h2.no}|${h2.actions.length}` !== key || Date.now() < botHold) return botTick();
+      apply(botMove(id), myId);
+    }, Math.max(0, botHold - Date.now()) + 700 + Math.random() * 900);
+  }
+
+  // Plays by its chance to win (simulated against the live hands) versus the price of calling,
+  // with a little randomness so it bluffs and slow-plays now and then.
+  function botMove(id) {
+    const h = S.hand; const a = actorInfo(id);
+    const d = secrets[h.no]; const cards = d && d.hole[id];
+    const opps = h.ids.filter((x) => x !== id && !h.folded[x]).length;
+    const eq = cards ? Cards.equity(cards, h.board || [], opps, h.game, 300) : 0.4;
+    const r = Math.random();
+    const raise = (f) => {
+      const to = Math.max(a.minTo, Math.min(a.maxTo, Math.round(h.currentBet + (a.pot + a.toCall) * f)));
+      return to >= a.maxTo ? { type: 'allin' } : { type: 'raise', amount: to };
+    };
+    let m;
+    if (a.toCall === 0) {
+      if (a.canRaise && eq > 0.62 && r < 0.75) m = raise(0.5 + Math.random() * 0.4);
+      else if (a.canRaise && ((eq > 0.45 && r < 0.2) || r < 0.06)) m = raise(0.4);
+      else m = { type: 'check' };
+    } else {
+      const odds = a.toCall / (a.pot + a.toCall);
+      if (a.canRaise && eq > 0.72 && r < 0.55) m = raise(0.75);
+      else if (eq >= odds + 0.03 || (a.toCall <= h.bb && eq > 0.25) || r < 0.07) m = { type: 'call' };
+      else m = { type: 'fold' };
+    }
+    return Object.assign({ c: 'act', pid: id }, m);
+  }
+
   function actorInfo(id) {
     const h = S.hand; const p = pById(id);
     const bet = h.bets[id] || 0;
@@ -339,6 +397,7 @@
     const typingPd = document.activeElement && document.activeElement.id === 'pdBetInput';
     $app.innerHTML = topBar() + `<div class="wrap">${hostLostBanner()}${S.handNo === 0 && !h ? lobby() : isPD() ? pdTable() : table()}</div>` + (isPD() ? pdBottom() : bottomBar(actor)) + sheet();
     runNames();
+    botTick();
     window.scrollTo(0, scrollY);
     const ri = ui.typingRaise && document.getElementById('raiseInput');
     if (ri) { ri.focus(); syncRaise(true); }
@@ -456,12 +515,14 @@
       <h2>ผู้เล่น (${S.players.length}) · ${isPD() ? 'ป๊อกเด้ง' : `${S.settings.mode === 'cash' ? 'Cash game' : 'Tournament'} · ${S.settings.game === 'plo' ? 'PLO · ' : ''}${credit() ? 'ไม่ต้อง buy-in (ยอด +/-)' : `ชิปเริ่ม ${fmt(S.settings.startStack)}`}${S.settings.appCards ? ' · 📱 แอปแจกไพ่' : ''}`}</h2>
       <div class="players">${list || '<p class="muted">ยังไม่มีผู้เล่น</p>'}</div>
       ${isHost() ? `<p class="muted small">${isPD() ? 'คนแรกในรายการเป็นเจ้ามือป๊อกเด้ง (🏦) เปลี่ยนได้ทีหลัง' : 'เรียงที่นั่งได้ที่ ☰ เจ้ามือ → ผู้เล่น (ลำดับ = เวียนตามเข็มนาฬิกา)'}</p>
+        ${isPD() ? '' : '<button class="ghost" style="width:100%;margin-bottom:8px" data-a="cmd" data-c="addBot">🤖 เพิ่มบอท (เล่นคนเดียว / ทดสอบ)</button>'}
         <div class="grid2"><button data-a="sheet" data-v="settings">ตั้งค่า</button><button class="primary" data-a="cmd" data-c="start" ${S.players.length < 2 ? 'disabled' : ''}>เริ่มเกม</button></div>`
         : `<p class="muted center">รอ${hostWord()}เริ่มเกม…</p>`}
     </div>`;
   }
 
   function isOnline(id) {
+    if ((pById(id) || {}).bot) return true;
     if (isHost()) return id === myId || online.has(id);
     return netStatus === 'online' && (id === myId || id === S.hostId || online.has(id));
   }
@@ -1073,7 +1134,7 @@
         <button class="sm danger" data-a="remove" data-pid="${esc(p.id)}" ${busy ? 'disabled' : ''}>ลบ</button>
       </div></div>`;
     }).join('');
-    return ['ผู้เล่น', `<p class="muted small" style="margin-top:0">ลำดับในรายการ = ลำดับที่นั่งเวียนตามเข็มนาฬิกา · ${credit() ? 'แก้ยอด/ลบ' : 'แก้ชิป/Rebuy/ลบ'} ได้เมื่อคนนั้นไม่ได้อยู่ในมือที่กำลังเล่น</p>${rows}`];
+    return ['ผู้เล่น', `<button style="width:100%;margin-bottom:10px" data-a="cmd" data-c="addBot">🤖 เพิ่มบอท</button><p class="muted small" style="margin-top:0">บอทเล่นเองในโหมดแอปแจกไพ่ · ลำดับในรายการ = ลำดับที่นั่งเวียนตามเข็มนาฬิกา · ${credit() ? 'แก้ยอด/ลบ' : 'แก้ชิป/Rebuy/ลบ'} ได้เมื่อคนนั้นไม่ได้อยู่ในมือที่กำลังเล่น</p>${rows}`];
   }
 
   // Fewest transfers that settle everyone: biggest loser pays biggest winner first.
