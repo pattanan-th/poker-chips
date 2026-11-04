@@ -13,6 +13,8 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }, // false: private mode or storage full
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
+  // the release number is the ?v=N on the script tags, so there's nothing extra to bump
+  const APP_VER = (() => { const s = document.currentScript || document.querySelector('script[src*="app.js"]'); const m = s && /[?&]v=(\d+)/.exec(s.src); return m ? `v${m[1]}` : ''; })();
   const RANDOM_NAMES = ['เจ', 'โจ้', 'จิน', 'แจง', 'เจฟ', 'เจี๊ยบ', 'จอร์จ', 'จอห์น', 'จิ๊บ', // 🎲 next to the name box
     'จ๋า', 'จุ๊บ', 'จิ๋ว', 'จูน', 'แจ๊ค', 'จั๊ม', 'จ๊ะจ๋า', 'จูเนียร์', 'โจโจ้', 'เจน'];
   const NAME_MAX = 100; // only a guard against junk; long names scroll in the player list
@@ -594,7 +596,7 @@
     const resume = roomParam && store.get(hostKey(roomParam), null) ? roomParam : null;
     $app.innerHTML = `<div class="wrap">
       <svg class="chip-logo" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#c0392b"/><circle cx="50" cy="50" r="30" fill="none" stroke="#fff" stroke-width="8" stroke-dasharray="12 10"/><circle cx="50" cy="50" r="18" fill="#c0392b" stroke="#fff" stroke-width="2"/></svg>
-      <h1>Kapoke Chip</h1>
+      <h1>Kapoke Chip<sup class="ver">${APP_VER}</sup></h1>
       <p class="center muted">ไพ่จริงบนโต๊ะ · ชิปบนมือถือ</p>
       <div class="card">
         <label>ชื่อของคุณ</label>
