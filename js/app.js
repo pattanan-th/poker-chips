@@ -947,6 +947,12 @@
   }
 
   // My hole cards in front of my seat, with what I hold, my chance to win and my bet.
+  // After folding, the hand you'd have held so far (for the regret): empty until the flop
+  function regretHand(h, cards) {
+    if (!h.folded[myId] || !cards || !h.board || h.board.length < 3) return null;
+    const b = Cards.bestFor(cards, h.board, h.game);
+    return b ? b.name : null;
+  }
   function myCardsAtSeat(xPct, yPct, myBet) {
     const h = S.hand; const cards = myHole();
     const bet = myBet ? `<span class="tbet inline">${fmt(myBet)}</span>` : '';
@@ -955,7 +961,8 @@
     const made = !folded && h.board && h.board.length >= 3 ? Cards.bestFor(cards, h.board, h.game) : null;
     const eq = folded || h.done || h.street === 'showdown' ? null : winChance(h, cards);
     const shownMine = h.shown && h.shown[myId];
-    const info = [folded ? 'Fold แล้ว' : made ? `<b class="gold">${made.name}</b>` : '', eq == null ? '' : `ชนะ <b class="gold">${eq === undefined ? '…' : Math.round(eq * 100) + '%'}</b>`].filter(Boolean).join(' · ');
+    const regret = regretHand(h, cards);
+    const info = [folded ? `Fold แล้ว${regret ? ` · 😢 <b class="gold">${regret}</b>` : ''}` : made ? `<b class="gold">${made.name}</b>` : '', eq == null ? '' : `ชนะ <b class="gold">${eq === undefined ? '…' : Math.round(eq * 100) + '%'}</b>`].filter(Boolean).join(' · ');
     const showBtn = h.done && !shownMine ? `<button class="sm" data-a="cmd" data-c="show" data-pid="${esc(myId)}">🃏 โชว์ไพ่</button>` : '';
     const cardRow = ui.holeHidden ? cards.map(() => cardHtml(null)).join('') : cards.map((c, i) => cardHtml(c, '', `m${h.no}`, i)).join('');
     return `<div class="tmycards ${folded ? 'fold' : ''}${cards.length > 2 ? ' four' : ''}" style="left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%">
@@ -1188,7 +1195,7 @@
       return `<div class="card mycards hidden" data-a="holeHide"><span class="pcs">${cardHtml(null, 'lg')}${cardHtml(null, 'lg')}</span><span class="muted small">ไพ่ของคุณ · แตะเพื่อดู</span></div>`;
     }
     return `<div class="card mycards ${folded ? 'fold' : ''}" data-a="holeHide">${cardsHtml(cards, 'lg', `m${h.no}`)}
-      <span class="small"><b>ไพ่ของคุณ</b>${h.game === 'plo' ? ' <span class="muted">(ใช้ 2 ใบ + กลาง 3 ใบ)</span>' : ''}${folded ? ' · Fold แล้ว' : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}${eqHtml}${showBtn}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
+      <span class="small"><b>ไพ่ของคุณ</b>${h.game === 'plo' ? ' <span class="muted">(ใช้ 2 ใบ + กลาง 3 ใบ)</span>' : ''}${folded ? ` · Fold แล้ว${regretHand(h, cards) ? `<br>😢 ถ้าไม่หมอบ: <b class="gold">${regretHand(h, cards)}</b>` : ''}` : made ? `<br>ตอนนี้: <b class="gold">${made.name}</b>` : ''}${eqHtml}${showBtn}<br><span class="muted">แตะเพื่อซ่อน</span></span></div>`;
   }
 
   function showdown() {
