@@ -921,10 +921,10 @@
       const seatBet = s.betAmt && p.id !== myId && side ? `<div><span class="tbet inline">${fb(s.betAmt)}</span></div>` : '';
       return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" data-pid="${esc(p.id)}" style="${pct(x, y)}">
           <div class="av${p.emoji ? ' emo' : ''}">${avatarOf(p)}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span></div>
+          ${shown ? `<div class="sshown">${shown.hand ? `<span class="shand">${esc(shown.hand)}</span>` : ''}${cardsHtml(shown.cards, 'sm', `s${h.no}${p.id}`)}</div>` : ''}
           <div class="snm">${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${nameHtml(p.name)}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
           <div class="sstk ${credit() ? toneOf(balance(p)) : ''}">${chips(p)}${s.wonAmt ? ` <span class="won">+${fb(s.wonAmt)}</span>` : ''}</div>
           ${seatBet}${shown ? '' : `<div class="sst">${esc(s.status)}${s.clock}</div>`}
-          ${shown ? `<div class="sshown${y < cy ? ' inl' : ''}">${cardsHtml(shown.cards, 'sm', `s${h.no}${p.id}`)}${shown.hand ? `<div>${esc(shown.hand)}</div>` : ''}</div>` : ''}
         </div>${bet}`;
     }).join('');
     const meSeat = mine >= 0 ? trackPoint(0, path) : null;

@@ -312,8 +312,11 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .seat .snm .nmtxt { display: block; flex: 0 1 auto; min-width: 0; }
 .seat .sstk { font-size: 14px; font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; background: rgba(0, 0, 0, .6); border-radius: 6px; padding: 0 6px; margin-top: 1px; }
 .seat .sst { font-size: 12px; color: #d8e6df; white-space: nowrap; text-shadow: 0 1px 2px #000; }
-.seat .sshown { font-size: 11px; color: var(--gold); white-space: nowrap; margin-top: 2px; }
-.seat .sshown.inl { display: flex; align-items: center; gap: 4px; }
+/* cards shown at showdown cover the avatar, with the hand's name pinned on their top edge — nothing extends past the seat */
+.seat .sshown { position: absolute; left: 50%; top: 0; height: 44px; max-width: 84px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; justify-content: center; }
+.seat .sshown .pcs { display: flex; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .6)); }
+.seat .sshown .pc + .pc { margin-left: -6px; }
+.seat .sshown .shand { position: absolute; left: 50%; top: 1px; transform: translate(-50%, -50%); z-index: 4; padding: 0 5px; border-radius: 6px; background: var(--gold); color: #1a1a1a; font-size: 10px; font-weight: 800; line-height: 1.5; white-space: nowrap; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
 .seat .won { color: var(--green); }
 .seat.turn .av { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold), 0 0 16px rgba(242, 193, 78, .7); }
 .seat.fold, .seat.idle { opacity: .45; }
