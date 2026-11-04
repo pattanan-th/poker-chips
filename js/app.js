@@ -963,6 +963,8 @@
     const a = from.getBoundingClientRect();
     const sx = a.left + a.width / 2; const sy = a.top + a.height / 2;
     const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // a big win is a pot of 50 BB or more (the whole pot, so a split big pot counts for each winner)
+    const bigPot = Object.values(h.result).reduce((a, b) => a + b, 0) >= BIG_POT_BB * (h.bb || 1);
     Object.entries(h.result).forEach(([id, amt], w) => {
       const seat = document.querySelector(`[data-pid="${CSS.escape(id)}"] .av, .pl[data-pid="${CSS.escape(id)}"] .stack`);
       if (!seat) return;
@@ -991,7 +993,7 @@
         setTimeout(() => pop.remove(), 1600);
       }, 250 + w * 350 + n * 70 + 450);
       // a big pot: chips rain down the winner's own screen; everyone else sees their seat glow
-      if (amt >= BIG_POT_BB * (h.bb || 1)) {
+      if (bigPot) {
         const at = 250 + w * 350 + n * 70 + 300;
         if (id === myId) setTimeout(() => chipRain(reduce), at);
         else setTimeout(() => seatGlow(id), at);
