@@ -190,6 +190,19 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
 .sessioncustom { margin-top: 8px; font-size: 14px; color: var(--muted); }
 .sessioncustom > span { flex: none; }
 .sessioncustom input { width: 90px; flex: none; text-align: center; padding: 7px; }
+/* compact settings sheet */
+.settings label { margin: 12px 0 5px; display: flex; align-items: center; gap: 4px; }
+.settings .tipbtn { background: none; border: 0; padding: 0 4px; font-size: 15px; color: var(--muted); line-height: 1; min-height: 0; }
+.settings .tip { margin: -2px 0 6px; padding: 8px 10px; font-size: 13px; line-height: 1.45; color: #d8e6df; background: rgba(0, 0, 0, .25); border-left: 3px solid var(--gold); border-radius: 6px; }
+.settings .seg button { padding: 7px 4px; font-size: 14px; }
+.settings select, .settings input { padding: 8px 10px; }
+.settings .trow .seg { flex: 1; }
+.settings .trow { gap: 6px; }
+.settings .trow .seg { min-width: 0; }
+.settings .trow .seg button { padding: 7px 2px; }
+.settings .trow input { width: 54px; flex: none; text-align: center; padding: 8px 4px; }
+.settings .trow > span { flex: none; font-size: 13px; color: var(--muted); }
+.settings .grid3.sub { font-size: 11px; color: var(--muted); text-align: center; margin-top: 2px; }
 
 /* recent rooms */
 .room { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }

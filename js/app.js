@@ -1285,54 +1285,50 @@
         <button class="primary" style="width:100%;margin-top:14px" data-a="saveSettings">บันทึก</button>`];
     }
     const locked = S.handNo > 0;
+    const midHand = S.hand && !S.hand.done;
     const levels = st.levels.map((l, i) => levelRow(l, i, st.mode === 'tournament' && S.levelStart != null && i === S.level)).join('');
-    return ['ตั้งค่า', `
-      <label>รูปแบบเกม${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
+    // label with a small ⓘ that opens its explanation underneath
+    const lab = (text, k, tip) => `<label>${text} <button class="tipbtn" data-a="tip" data-k="${k}" aria-label="คำอธิบาย">ⓘ</button></label><p class="tip" id="tip_${k}" hidden>${tip}</p>`;
+    const seg = (id, cur, opts, act) => `<div class="seg" ${id ? `id="${id}"` : ''}>${opts.map(([v, l]) => `<button class="${String(cur) === String(v) ? 'on' : ''}" data-a="${act}" data-v="${v}">${l}</button>`).join('')}</div>`;
+    const timeRow = (inputId, val, presets, unit, segId) => `<div class="row trow">${segId ? `<div class="seg" id="${segId}">` : '<div class="seg">'}${presets.map(([v, l]) => `<button class="${Number(val) === v ? 'on' : ''}" ${segId ? `data-a="sessionPreset"` : `data-a="fillNum" data-t="${inputId}"`} data-v="${v}">${l}</button>`).join('')}</div>
+      <input id="${inputId}" type="number" inputmode="numeric" min="0" value="${val}" aria-label="${unit}"></div>`;
+    return ['ตั้งค่า', `<div class="settings">
+      ${lab('รูปแบบ', 'mode', 'Cash game: ซื้อชิป/Rebuy ได้ เล่นจนเลิก · Tournament: ชิปเท่ากัน Blind ขึ้นตามเวลา เล่นจนเหลือคนเดียว · เปลี่ยนไม่ได้หลังเริ่มเกม')}
       <select id="s_mode" ${locked ? 'disabled' : ''}><option value="cash" ${st.mode === 'cash' ? 'selected' : ''}>Cash game</option><option value="tournament" ${st.mode === 'tournament' ? 'selected' : ''}>Tournament</option></select>
-      <label>เกม${S.hand && !S.hand.done ? ' (เปลี่ยนได้หลังจบมือ)' : ''}</label>
+      ${lab('เกม', 'game', "Texas Hold'em: No-Limit แจกคนละ 2 ใบ · Omaha (PLO): Pot-Limit แจกคนละ 4 ใบ ต้องใช้ไพ่ในมือ 2 ใบพอดี + ไพ่กลาง 3 ใบ Raise ได้สูงสุดเท่า Pot · เปลี่ยนได้หลังจบมือ")}
       <input type="hidden" id="s_game" value="${st.game === 'plo' ? 'plo' : 'nlh'}">
-      <div class="seg" id="gameSeg">${[['nlh', "Texas Hold'em"], ['plo', 'Omaha (PLO)']].map(([v, l]) => `<button class="${(st.game === 'plo' ? 'plo' : 'nlh') === v ? 'on' : ''}" data-a="gameType" data-v="${v}">${l}</button>`).join('')}</div>
-      <p class="muted small" id="gameHint" ${st.game === 'plo' ? '' : 'hidden'}>Pot-Limit Omaha: แจกคนละ 4 ใบ ต้องใช้ไพ่ในมือ 2 ใบพอดี + ไพ่กลาง 3 ใบ · Raise ได้สูงสุดเท่ากับ Pot</p>
-      <label>ไพ่</label>
+      ${seg('gameSeg', st.game === 'plo' ? 'plo' : 'nlh', [['nlh', "Texas Hold'em"], ['plo', 'Omaha (PLO)']], 'gameType')}
+      ${lab('ไพ่', 'cards', 'ใช้ไพ่จริง: แจกไพ่บนโต๊ะ เจ้ามือเลือกผู้ชนะเอง · แอปแจกไพ่ให้: สับแบบสุ่มเท่ากันทุกใบ แต่ละคนเห็นแค่ไพ่ตัวเองในมือถือ เปิดไพ่กลางและตัดสินผู้ชนะให้เอง (ต้องใช้ถ้ามีบอท) · เปลี่ยนได้หลังจบมือ')}
       <input type="hidden" id="s_cards" value="${st.appCards ? 1 : 0}">
-      <div class="seg" id="cardsSeg">${[[0, '🃏 ใช้ไพ่จริง'], [1, '📱 แอปแจกไพ่ให้']].map(([v, l]) => `<button class="${(st.appCards ? 1 : 0) === v ? 'on' : ''}" data-a="cardsMode" data-v="${v}">${l}</button>`).join('')}</div>
-      <p class="muted small" id="cardsHint" ${st.appCards ? '' : 'hidden'}>แอปสับไพ่แบบสุ่มเท่ากันทุกใบ แต่ละคนเห็นแค่ไพ่ของตัวเองในมือถือ ไพ่กลางเปิดให้เองทีละรอบ และตัดสินผู้ชนะให้อัตโนมัติ (เปลี่ยนได้หลังจบมือ)</p>
-      <label>⏱ เวลาตัดสินใจต่อตา</label>
-      <div class="seg">${[0, 15, 30, 60].map((v) => `<button data-a="fillNum" data-t="s_actsec" data-v="${v}">${v ? v + ' วิ' : 'ไม่จำกัด'}</button>`).join('')}</div>
-      <div class="row sessioncustom"><span>หรือกำหนดเอง</span><input id="s_actsec" type="number" inputmode="numeric" min="0" value="${st.actSec || 0}"><span>วินาที</span></div>
-      <p class="muted small">หมดเวลาแล้วแอป Check ให้ถ้า Check ได้ ไม่งั้น Fold · 0 = ไม่จำกัด</p>
-      <label>▶ เริ่มมือถัดไปอัตโนมัติ</label>
-      <div class="seg">${[0, 5, 10, 20].map((v) => `<button data-a="fillNum" data-t="s_autonext" data-v="${v}">${v ? v + ' วิ' : 'ปิด'}</button>`).join('')}</div>
-      <div class="row sessioncustom"><span>หรือกำหนดเอง</span><input id="s_autonext" type="number" inputmode="numeric" min="0" value="${st.autoNext || 0}"><span>วินาที</span></div>
-      <p class="muted small">จบมือแล้วนับถอยหลัง ถ้าเจ้ามือไม่ได้กดเริ่ม เกมจะเริ่มมือใหม่เอง · 0 = เจ้ามือกดเอง</p>
+      ${seg('cardsSeg', st.appCards ? 1 : 0, [[0, '🃏 ไพ่จริง'], [1, '📱 แอปแจกไพ่']], 'cardsMode')}
+      ${lab('⏱ เวลาตัดสินใจ (วินาที)', 'actsec', 'ถึงตาแล้วนับถอยหลัง หมดเวลาแอป Check ให้ถ้า Check ได้ ไม่งั้น Fold · 0 = ไม่จำกัด')}
+      ${timeRow('s_actsec', st.actSec || 0, [[0, 'ปิด'], [15, '15'], [30, '30'], [60, '60']], 'วิ')}
+      ${lab('▶ เริ่มมือถัดไปเอง (วินาที)', 'autonext', 'จบมือแล้วนับถอยหลัง ถ้าเจ้ามือไม่ได้กดเริ่ม เกมเริ่มมือใหม่เอง · 0 = เจ้ามือกดเอง')}
+      ${timeRow('s_autonext', st.autoNext || 0, [[0, 'ปิด'], [5, '5'], [10, '10'], [20, '20']], 'วิ')}
       <div id="buyInBox" ${st.mode === 'cash' ? '' : 'hidden'}>
-        <label>Buy-in${locked ? ' (เปลี่ยนไม่ได้หลังเริ่มเกม)' : ''}</label>
+        ${lab('Buy-in', 'credit', 'ซื้อชิปก่อนเล่น: ทุกคนเริ่มด้วยชิปเท่ากัน หมดแล้ว Rebuy · ไม่ต้อง buy-in: ทุกคนเริ่มที่ 0 ลงได้ไม่จำกัด ยอดติดลบได้ (ไม่มี All-in) จบเกมดูว่าใครโอนให้ใคร · เปลี่ยนไม่ได้หลังเริ่มเกม')}
         <input type="hidden" id="s_credit" value="${st.credit ? 1 : 0}">
-        <div class="seg" id="creditSeg">${[[0, 'ซื้อชิปก่อนเล่น'], [1, 'ไม่ต้อง buy-in (+/-)']].map(([v, l]) => `<button class="${(st.credit ? 1 : 0) === v ? 'on' : ''}" data-a="creditMode" data-v="${v}" ${locked ? 'disabled' : ''}>${l}</button>`).join('')}</div>
-        <p class="muted small" id="creditHint" ${st.credit ? '' : 'hidden'}>ทุกคนเริ่มที่ 0 ลงได้ไม่จำกัด ยอดติดลบได้ (ไม่มี All-in) จบเกมดูสรุปว่าใครโอนให้ใคร</p>
+        <div class="seg" id="creditSeg">${[[0, 'ซื้อชิปก่อน'], [1, 'ไม่ต้อง buy-in']].map(([v, l]) => `<button class="${(st.credit ? 1 : 0) === v ? 'on' : ''}" data-a="creditMode" data-v="${v}" ${locked ? 'disabled' : ''}>${l}</button>`).join('')}</div>
       </div>
-      <div id="stackBox" ${st.mode === 'cash' && st.credit ? 'hidden' : ''}><label>ชิปเริ่มต้น / ต่อ 1 buy-in${locked ? ' (มีผลกับ Rebuy ครั้งต่อไป)' : ''}</label><input id="s_stack" type="number" inputmode="numeric" value="${st.startStack}"></div>
+      <div id="stackBox" ${st.mode === 'cash' && st.credit ? 'hidden' : ''}>${lab('ชิปเริ่มต้น', 'stack', 'ชิปที่แต่ละคนได้ตอนเริ่ม และต่อ 1 Rebuy · แก้ระหว่างเกมมีผลกับ Rebuy ครั้งต่อไป')}<input id="s_stack" type="number" inputmode="numeric" value="${st.startStack}"></div>
       <div id="cashBox" ${st.mode === 'cash' ? '' : 'hidden'}>
-        <div class="grid3"><div><label>SB</label><input id="s_sb" type="number" inputmode="numeric" value="${st.sb}"></div>
-        <div><label>BB</label><input id="s_bb" type="number" inputmode="numeric" value="${st.bb}"></div>
-        <div><label>Ante</label><input id="s_ante" type="number" inputmode="numeric" value="${st.ante || 0}"></div></div>
-        <div id="moneyBuyIn" ${st.credit ? 'hidden' : ''}><label>มูลค่าเงินต่อ 1 buy-in (บาท, ใส่ 0 ถ้าไม่ใช้)</label><input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}"></div>
-        <div id="moneyCredit" ${st.credit ? '' : 'hidden'}><label>1 ชิป = กี่บาท (ใส่ 0 ถ้าไม่ใช้)</label><input id="s_rate" type="number" inputmode="decimal" step="any" min="0" value="${st.chipBaht || 0}"></div>
-        <label>⏰ เวลาเล่น</label>
-        <div class="seg" id="sessionSeg">${[0, 60, 90, 120, 180].map((m) => `<button class="${(st.sessionMin || 0) === m ? 'on' : ''}" data-a="sessionPreset" data-v="${m}">${m ? m / 60 + ' ชม.' : 'ไม่จำกัด'}</button>`).join('')}</div>
-        <div class="row sessioncustom"><span>หรือกำหนดเอง</span><input id="s_session" type="number" inputmode="numeric" min="0" value="${st.sessionMin || 0}"><span>นาที</span></div>
-        <p class="muted small">ค่าเริ่มต้นคือไม่จำกัดเวลา · ถ้าตั้งเวลา จะเริ่มนับตอนมือแรก (ถ้าแก้ระหว่างเกมจะนับใหม่ทันที) และพอหมดเวลาจะแจ้งทุกเครื่อง</p>
-        <p class="muted small">เปลี่ยน blind มีผลตั้งแต่มือถัดไป</p>
+        ${lab('Blinds', 'blinds', 'SB / BB / Ante (Ante = ทุกคนจ่ายก่อนแจกไพ่ ใส่ 0 = ไม่มี) · เปลี่ยนแล้วมีผลตั้งแต่มือถัดไป')}
+        <div class="grid3"><input id="s_sb" type="number" inputmode="numeric" value="${st.sb}" placeholder="SB" aria-label="SB"><input id="s_bb" type="number" inputmode="numeric" value="${st.bb}" placeholder="BB" aria-label="BB"><input id="s_ante" type="number" inputmode="numeric" value="${st.ante || 0}" placeholder="Ante" aria-label="Ante"></div>
+        <div class="grid3 sub"><span>SB</span><span>BB</span><span>Ante</span></div>
+        <div id="moneyBuyIn" ${st.credit ? 'hidden' : ''}>${lab('บาท / 1 buy-in', 'money', 'ใช้คิดเงินในหน้าสรุปว่าใครโอนให้ใคร · 0 = ไม่คิดเป็นเงิน')}<input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}"></div>
+        <div id="moneyCredit" ${st.credit ? '' : 'hidden'}>${lab('บาท / 1 ชิป', 'rate', 'ใช้คิดเงินในหน้าสรุปว่าใครโอนให้ใคร · 0 = ไม่คิดเป็นเงิน')}<input id="s_rate" type="number" inputmode="decimal" step="any" min="0" value="${st.chipBaht || 0}"></div>
+        ${lab('⏰ เวลาเล่น (นาที)', 'session', 'นับตั้งแต่มือแรก หมดเวลาแล้วแจ้งทุกเครื่องให้เล่นมือนั้นจบแล้วสรุป · แก้ระหว่างเกมจะเริ่มนับใหม่ · 0 = ไม่จำกัด')}
+        ${timeRow('s_session', st.sessionMin || 0, [[0, 'ปิด'], [60, '1ชม.'], [120, '2ชม.'], [180, '3ชม.']], 'นาที', 'sessionSeg')}
       </div>
       <div id="tourBox" ${st.mode === 'tournament' ? '' : 'hidden'}>
-        <label>โครงสร้าง Blind</label>
+        ${lab('โครงสร้าง Blind', 'levels', 'แต่ละ Level เล่นตามนาทีที่ตั้ง แล้ว Blind ขึ้นเอง · Ante ใส่ 0 = ไม่มี · พิมพ์ BB แล้ว SB เติมให้ครึ่งหนึ่ง')}
         <div class="lvhead"><span>Lv</span><span>SB</span><span>BB</span><span>Ante</span><span>นาที</span><span></span></div>
         <div id="lvRows">${levels}</div>
         <button class="ghost" style="width:100%;margin-top:8px" data-a="lvAdd">+ เพิ่ม Level</button>
         <div class="lvall"><span>ตั้งทุก Level เป็น</span><input id="lvAllMin" type="number" inputmode="numeric" value="${st.levels[0] ? st.levels[0].min : 3}"><span>นาที</span><button class="sm" data-a="lvAllMin">ใช้</button></div>
-        <p class="muted small">Ante = ทุกคนจ่ายก่อนแจกไพ่ (ใส่ 0 = ไม่มี) · พิมพ์ BB แล้ว SB จะเติมให้ครึ่งหนึ่งอัตโนมัติ</p>
       </div>
-      <button class="primary" style="width:100%;margin-top:14px" data-a="saveSettings">บันทึก</button>`];
+      ${midHand ? '<p class="muted small center">เกม / แบบไพ่ เปลี่ยนได้หลังจบมือ</p>' : ''}
+      <button class="primary" style="width:100%;margin-top:12px" data-a="saveSettings">บันทึก</button></div>`];
   }
 
   function levelRow(l, i, current) {
@@ -1573,7 +1569,6 @@
     const v = Number(document.getElementById('s_credit').value);
     const on = v === 1 && document.getElementById('s_mode').value === 'cash';
     document.querySelectorAll('#creditSeg button').forEach((b) => b.classList.toggle('on', Number(b.dataset.v) === v));
-    document.getElementById('creditHint').hidden = !on;
     document.getElementById('stackBox').hidden = on;
     document.getElementById('moneyBuyIn').hidden = on;
     document.getElementById('moneyCredit').hidden = !on;
@@ -1777,16 +1772,18 @@
         if (!confirm('รับเป็นเจ้ามือแทนเลย? มือถือเครื่องนี้ต้องเปิดแอปค้างไว้ตลอดเกม')) return;
         takeOver(false);
         break;
-      case 'fillNum': document.getElementById(d.t).value = d.v; break;
+      case 'fillNum':
+        document.getElementById(d.t).value = d.v;
+        el.parentNode.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === el));
+        break;
+      case 'tip': { const t = document.getElementById('tip_' + d.k); if (t) t.hidden = !t.hidden; break; }
       case 'gameType':
         document.getElementById('s_game').value = d.v;
         document.querySelectorAll('#gameSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
-        document.getElementById('gameHint').hidden = d.v !== 'plo';
         break;
       case 'cardsMode':
         document.getElementById('s_cards').value = d.v;
         document.querySelectorAll('#cardsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === d.v));
-        document.getElementById('cardsHint').hidden = d.v !== '1';
         break;
       case 'mute': Sfx.setMuted(!Sfx.isMuted()); render(); break;
       case 'view': ui.view = d.v; store.set('pk:view', d.v); ui.sheet = null; render(); break;
