@@ -119,6 +119,7 @@
     pruneHostSaves();
     S.hostId = myId;
     stampClock(true); // a reload or a new host gives the current turn a fresh clock
+    Object.keys(offlineSince).forEach((k) => delete offlineSince[k]); // players get time to reconnect to this host
     lastRemember = Date.now(); rememberRoom(code, 'host', S);
     history.replaceState(null, '', location.pathname + '?room=' + code + (params.get('pid') ? '&pid=' + params.get('pid') : ''));
     net = Net.host(code, {
@@ -138,7 +139,8 @@
           const p = pById(cid);
           if (!p && S.players.length >= seatLimit()) { net.send(cid, { t: 'full', max: seatLimit() }); setTimeout(() => net.kick(cid), 500); toast(`${name} เข้าไม่ได้ — ${fullMsg()}`); return; }
           if (!p) { E.addPlayer(S, cid, name); pById(cid).emoji = cleanEmoji(msg.emoji); saveHost(); toast(`${name} เข้าห้องแล้ว`, true); }
-          else { if (p.name !== name) p.name = name; if (msg.emoji != null) p.emoji = cleanEmoji(msg.emoji); }
+          else { if (p.name !== name) p.name = name; if (msg.emoji != null) p.emoji = cleanEmoji(msg.emoji); if (p.leaving === 'gone') p.leaving = null; }
+          delete offlineSince[cid];
           broadcast(); render();
         } else if (msg.t === 'cmd') {
           apply(msg.cmd, cid);
@@ -206,7 +208,7 @@
   }
   const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
-  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'rename', 'avatar', 'pdBet', 'show'];
+  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'leaveSeat', 'rename', 'avatar', 'pdBet', 'show'];
   // Pok Deng: the banker runs the round from their own phone too
   const BANKER_CMDS = ['pdBet', 'pdDeal', 'pdReopen', 'pdSettle'];
 
@@ -253,11 +255,12 @@
     switch (cmd.c) {
       case 'act':
         E.act(S, cmd.pid, cmd.type, cmd.amount);
-        if (cmd.timeout) {
+        if (cmd.timeout || cmd.away) {
+          const note = cmd.timeout ? ' (หมดเวลา)' : ' (ออกจากโต๊ะ)';
           const acts = S.hand.actions.filter((x) => x.id === cmd.pid); const x = acts[acts.length - 1];
-          if (x) x.t += ' (หมดเวลา)';
+          if (x) x.t += note;
           const i = S.log.map((l, k) => [l, k]).reverse().find(([l]) => l.startsWith(pById(cmd.pid).name + ' '));
-          if (i) S.log[i[1]] += ' (หมดเวลา)';
+          if (i) S.log[i[1]] += note;
         }
         return;
       case 'show': return Cards.show(S, secrets, cmd.pid);
@@ -274,7 +277,18 @@
       case 'rebuy': return E.rebuy(S, cmd.pid);
       case 'stack': return E.setStack(S, cmd.pid, cmd.v, cmd.asBuyIn);
       case 'sitout': return E.setSitOut(S, cmd.pid, cmd.v);
-      case 'stand': return E.setLeft(S, cmd.pid, cmd.v);
+      case 'stand': {
+        const p = pById(cmd.pid); const h = S.hand;
+        if (cmd.v && h && !h.done && h.ids.includes(cmd.pid) && !h.folded[cmd.pid]) {
+          if (!p.leaving) { p.leaving = 'stand'; S.log.push(`${p.name} จะลุกหลังจบมือนี้`); }
+          return;
+        }
+        if (p) p.leaving = null;
+        if (cmd.auto) S.log.push(`${p.name} ${cmd.auto === 'offline' ? 'หลุดการเชื่อมต่อ' : 'ออกจากห้อง'} — ลุกจากโต๊ะให้อัตโนมัติ`);
+        return E.setLeft(S, cmd.pid, cmd.v);
+      }
+      // the player closed the room: fold their hand when it's their turn, then stand them up
+      case 'leaveSeat': { const p = pById(cmd.pid); if (p && !p.left) p.leaving = 'gone'; return; }
       case 'remove':
         E.removePlayer(S, cmd.pid);
         S.removed = (S.removed || []).concat(cmd.pid);
@@ -409,9 +423,31 @@
       const free = (h.bets[h.toAct] || 0) >= h.currentBet;
       return apply({ c: 'act', pid: h.toAct, type: free ? 'check' : 'fold', timeout: true }, myId);
     }
+    if (awayTick(h, t)) return;
     const ns = nextStarts(h);
     if (ns && t >= ns && autoTried !== h.no) { autoTried = h.no; apply({ c: 'start' }, myId); }
   }, 500);
+
+  // A player who closed the room, or whose phone has been unreachable for OFFLINE_S, is folded when
+  // it's their turn and stood up once they're out of the hand, so the table never waits on them.
+  // Someone who pressed stand mid-hand is stood up when the hand ends.
+  const OFFLINE_S = 20;
+  const offlineSince = {};
+  function awayTick(h, t) {
+    const live = h && !h.done;
+    for (const p of S.players) {
+      if (p.bot || p.id === myId || p.left) { delete offlineSince[p.id]; continue; }
+      if (online.has(p.id)) delete offlineSince[p.id];
+      else if (!offlineSince[p.id]) offlineSince[p.id] = t;
+      const dropped = offlineSince[p.id] && t - offlineSince[p.id] >= OFFLINE_S * 1000;
+      const gone = p.leaving === 'gone' || dropped;
+      if (!gone && p.leaving !== 'stand') continue;
+      if (live && h.toAct === p.id && gone) { apply({ c: 'act', pid: p.id, type: 'fold', away: true }, myId); return true; }
+      const inPlay = live && h.ids.includes(p.id) && !h.folded[p.id];
+      if (!inPlay) { apply({ c: 'stand', pid: p.id, v: true, auto: gone ? (p.leaving === 'gone' ? 'left' : 'offline') : null }, myId); return true; }
+    }
+    return false;
+  }
 
   // live countdowns: <span class="cd" data-until="…"> ticks without a full re-render
   const cdHtml = (until) => (until ? `<span class="cd" data-until="${until}">${Math.max(0, Math.ceil((until - now()) / 1000))}</span>` : '');
@@ -1761,8 +1797,9 @@
       }
       case 'rejoin': kicked = false; S = null; net.destroy(); startClient(code, { rejoin: true }); break;
       case 'leave':
-        if (!confirm('ออกจากห้อง?')) return;
-        net && net.destroy(); location.href = location.pathname + (params.get('pid') ? '?pid=' + params.get('pid') : '');
+        if (!confirm('ออกจากห้อง? (ถ้ากำลังเล่นอยู่ จะ Fold ให้แล้วลุกจากโต๊ะ)')) return;
+        if (S && pById(myId) && !pById(myId).left) send({ c: 'leaveSeat', pid: myId });
+        setTimeout(() => { net && net.destroy(); location.href = location.pathname + (params.get('pid') ? '?pid=' + params.get('pid') : ''); }, 400);
         break;
       case 'endRoom':
         if (!confirm('ปิดห้องและลบเกมนี้? (กู้คืนไม่ได้)')) return;

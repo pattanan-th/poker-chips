@@ -18,6 +18,7 @@
   // call onLostId() instead of retrying forever (someone else took over the room).
   function host(code, { onOpen, onMessage, onPeers, onStatus, onLostId, probe: useProbe }) {
     const conns = new Map(); // clientId -> conn
+    const seen = new Map();  // clientId -> last time we heard from it
     let peer, retry = 0, dead = false, wasOpen = false;
 
     function emitPeers() { onPeers([...conns.keys()]); }
@@ -29,11 +30,14 @@
         let cid = null;
         conn.on('data', (msg) => {
           if (!msg || typeof msg !== 'object') return;
+          if (cid) seen.set(cid, Date.now());
+          if (msg.t === 'beat') return;
           if (msg.t === 'hello' && typeof msg.id === 'string') {
             cid = msg.id;
             const old = conns.get(cid);
             if (old && old !== conn) old.close();
             conns.set(cid, conn);
+            seen.set(cid, Date.now());
             emitPeers();
           }
           if (cid) onMessage(cid, msg);
@@ -57,11 +61,18 @@
     }
     start();
 
+    // a phone that closed the page or lost signal often leaves its connection open on our side:
+    // clients beat every few seconds, so silence means they're gone
+    const sweep = setInterval(() => {
+      const t = Date.now();
+      conns.forEach((c, cid) => { if (t - (seen.get(cid) || 0) > 12000) { conns.delete(cid); c.close(); emitPeers(); } });
+    }, 3000);
+
     return {
       send(cid, msg) { const c = conns.get(cid); if (c && c.open) c.send(msg); },
       broadcast(msgFor) { conns.forEach((c, cid) => { if (c.open) c.send(msgFor(cid)); }); },
       kick(cid) { const c = conns.get(cid); if (c) c.close(); },
-      destroy() { dead = true; peer && peer.destroy(); },
+      destroy() { dead = true; clearInterval(sweep); peer && peer.destroy(); },
     };
   }
 
@@ -120,7 +131,8 @@
 
     // host pings every few seconds; silence means a half-dead connection (common after phone sleep)
     const watchdog = setInterval(() => {
-      if (conn && conn.open && Date.now() - lastMsg > 12000) { conn.close(); }
+      if (conn && conn.open && Date.now() - lastMsg > 12000) { conn.close(); return; }
+      if (conn && conn.open) conn.send({ t: 'beat' }); // tells the host we're still here
     }, 4000);
 
     connect();
