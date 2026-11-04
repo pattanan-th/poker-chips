@@ -283,7 +283,10 @@
       case 'show': return Cards.show(S, secrets, cmd.pid);
       case 'start':
         if (isPD()) { PD.init(S); S.handNo = Math.max(S.handNo, 1); return; }
+        S.breakNext = false;
         return E.startHand(S, t);
+      // a break: after this hand the table waits (no auto-start) until the host starts the next one
+      case 'breakNext': S.breakNext = !!cmd.v; return;
       case 'pdBet': return PD.setBet(S, cmd.pid, cmd.amount);
       case 'pdDeal': return PD.deal(S);
       case 'pdReopen': return PD.reopen(S);
@@ -430,7 +433,7 @@
   const clockAt = (at) => (at ? new Date(at - clockSkew).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '');
   const tmHtml = (at) => (at ? `<span class="tm">${clockAt(at)}</span>` : '');
   const turnEnds = (h) => (S.settings.actSec > 0 && h && !h.done && h.toAct && h.street !== 'showdown' && h.turnAt ? h.turnAt + S.settings.actSec * 1000 : null);
-  const nextStarts = (h) => (S.settings.autoNext > 0 && h && h.done && h.doneAt && E.eligible(S).length >= 2 ? h.doneAt + S.settings.autoNext * 1000 : null);
+  const nextStarts = (h) => (S.settings.autoNext > 0 && !S.breakNext && h && h.done && h.doneAt && E.eligible(S).length >= 2 ? h.doneAt + S.settings.autoNext * 1000 : null);
 
   // Clock ticking for the player whose turn it is: once a second over the last 10 s, faster and higher in the last 3
   let tickedSec = null;
@@ -810,15 +813,18 @@
       <button class="primary sm" style="flex:none" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">นั่งกลับ</button></div>` : '';
     const timeUp = ui.timeUp ? `<div class="banner row"><span>⏰ หมดเวลาเล่นแล้ว — เล่นมือนี้ให้จบแล้วดูว่าใครโอนให้ใคร</span>
       <button class="primary sm" style="flex:none" data-a="sheet" data-v="summary">💸 สรุป</button></div>` : '';
+    const breakBanner = S.breakNext && !isPD() ? `<div class="banner row"><span>${h && !h.done ? '☕ จะพักห้องหลังจบมือนี้' : '☕ พักห้องอยู่ — มือถัดไปยังไม่เริ่ม'}</span>${isHost() ? (h && !h.done
+      ? `<button class="ghost sm" style="flex:none" data-a="cmd" data-c="breakNext" data-v="">ยกเลิก</button>`
+      : `<button class="primary sm" style="flex:none" data-a="cmd" data-c="start">เล่นต่อ ▶</button>`) : ''}</div>` : '';
     const feed = h ? `<div class="card feed" data-a="sheet" data-v="hands"><div class="muted small">มือที่ ${h.no} · ทุก action ในมือนี้</div>${actionLines(h, (id) => esc((pById(id) || {}).name || '?'))}</div>` : '';
     const watchers = away.filter((p) => p.watching); const stood = away.filter((p) => !p.watching);
     const awayHtml = (stood.length ? `<div class="away"><span>ลุกแล้ว:</span> ${stood.map((p) => `${esc(p.name)} <b>${chips(p)}</b>`).join(' · ')}</div>` : '')
       + (watchers.length ? `<div class="away"><span>👀 ดูอยู่:</span> ${watchers.map((p) => esc(p.name)).join(' · ')}</div>` : '');
     if (ui.view === 'table') {
-      return `${timeUp}${standBanner}${feltTable(potHtml)}${awayHtml}
+      return `${timeUp}${breakBanner}${standBanner}${feltTable(potHtml)}${awayHtml}
         ${h && h.street === 'showdown' && !h.done ? showdown() : ''}`;
     }
-    return `${timeUp}${standBanner}<p class="center small viewsw"><u data-a="view" data-v="table">🃏 เปลี่ยนเป็นมุมมองโต๊ะ</u></p><div class="card pot">${potHtml}</div>${myCardsPanel()}${hostTools()}
+    return `${timeUp}${breakBanner}${standBanner}<p class="center small viewsw"><u data-a="view" data-v="table">🃏 เปลี่ยนเป็นมุมมองโต๊ะ</u></p><div class="card pot">${potHtml}</div>${myCardsPanel()}${hostTools()}
       <div class="players">${S.players.filter((p) => !p.left).map(playerRow).join('')}</div>
       ${awayHtml}
       ${h && h.street === 'showdown' && !h.done ? showdown() : ''}
@@ -1235,7 +1241,7 @@
         inner = over ? `<div class="grid2">${rebuy || ''}<button class="primary" data-a="sheet" data-v="summary">🏆 สรุปผล</button></div>`
           : `<div class="row">${rebuy}<button class="primary" style="padding:16px" data-a="cmd" data-c="start">เริ่มมือถัดไป ▶${nextStarts(h) ? ` <small>(อัตโนมัติใน ${cdHtml(nextStarts(h))} วิ)</small>` : ''}</button></div>`;
       } else {
-        const wait = nextStarts(h) ? `มือถัดไปเริ่มใน ${cdHtml(nextStarts(h))} วิ` : 'รอเจ้ามือเริ่มมือถัดไป…';
+        const wait = nextStarts(h) ? `มือถัดไปเริ่มใน ${cdHtml(nextStarts(h))} วิ` : S.breakNext ? '☕ พักห้องอยู่ — รอเจ้ามือเริ่มมือถัดไป' : 'รอเจ้ามือเริ่มมือถัดไป…';
         inner = rebuy ? `<div class="row">${rebuy}</div>${nextStarts(h) ? `<div class="waitbar" style="margin-top:6px">${wait}</div>` : ''}` : `<div class="waitbar">${wait}</div>`;
       }
     } else if (h.toAct) {
@@ -1536,6 +1542,7 @@
     }
     return ['เมนูเจ้ามือ', `<div class="menu">
       <button data-a="cmd" data-c="undo">↩️ Undo (ย้อน 1 ขั้น)</button>
+      <button data-a="cmd" data-c="breakNext" data-v="${S.breakNext ? '' : '1'}">${S.breakNext ? '☕ ยกเลิกการพักห้อง' : '☕ พักห้องหลังจบมือนี้'}</button>
       <button data-a="sheet" data-v="players">👥 ผู้เล่น · ชิป · Rebuy · ที่นั่ง</button>
       <button data-a="sheet" data-v="settings">⚙️ ตั้งค่า Blinds / เกม</button>
       ${tour || S.settings.sessionMin > 0 ? `<button data-a="cmd" data-c="pause" data-v="${S.pausedAt != null ? '' : '1'}">${S.pausedAt != null ? '▶ เดินเวลาต่อ' : '⏸ หยุดเวลา'}</button>` : ''}
