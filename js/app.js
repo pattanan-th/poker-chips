@@ -990,7 +990,44 @@
         document.body.appendChild(pop);
         setTimeout(() => pop.remove(), 1600);
       }, 250 + w * 350 + n * 70 + 450);
+      // a big pot: chips rain down the winner's own screen; everyone else sees their seat glow
+      if (amt >= BIG_POT_BB * (h.bb || 1)) {
+        const at = 250 + w * 350 + n * 70 + 300;
+        if (id === myId) setTimeout(() => chipRain(reduce), at);
+        else setTimeout(() => seatGlow(id), at);
+      }
     });
+  }
+
+  const BIG_POT_BB = 50;
+  function chipRain(reduce) {
+    const box = document.createElement('div');
+    box.className = 'chiprain';
+    const n = reduce ? 15 : 70;
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('i');
+      const dur = 1.3 + Math.random() * 1.2; const delay = Math.random() * 1.1;
+      c.style.left = `${Math.random() * 100}%`;
+      c.style.animationDuration = `${dur}s`;
+      c.style.animationDelay = `${delay}s`;
+      c.style.setProperty('--spin', `${(Math.random() * 2 - 1) * 720}deg`);
+      c.style.setProperty('--s', (0.7 + Math.random() * 0.7).toFixed(2));
+      box.appendChild(c);
+      if (i % 6 === 0) setTimeout(() => Sfx.play('land', i % 12), (delay + dur * 0.9) * 1000);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 4200);
+    try { navigator.vibrate && navigator.vibrate([60, 40, 60, 40, 200]); } catch (e) { /* ignore */ }
+  }
+  function seatGlow(id) {
+    const seat = document.querySelector(`.seat[data-pid="${CSS.escape(id)}"], .pl[data-pid="${CSS.escape(id)}"]`);
+    if (!seat) return;
+    const r = seat.getBoundingClientRect();
+    const g = document.createElement('div');
+    g.className = 'seatglow';
+    Object.assign(g.style, { left: `${r.left - 10}px`, top: `${r.top - 10}px`, width: `${r.width + 20}px`, height: `${r.height + 20}px` });
+    document.body.appendChild(g);
+    setTimeout(() => g.remove(), 3200);
   }
 
   // keep the table fitted when the action bar or the screen size changes

@@ -333,6 +333,17 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .flychip { position: fixed; z-index: 30; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; pointer-events: none; opacity: 0;
   background: radial-gradient(circle, #c0392b 0 34%, #fff 35% 44%, #c0392b 45%); border: 2px dashed #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, .5);
   transition: transform .6s cubic-bezier(.3, .1, .3, 1), opacity .1s; }
+/* big pot: the winner gets a chip shower, the others see the winner's seat glow */
+.chiprain { position: fixed; inset: 0; z-index: 32; pointer-events: none; overflow: hidden; }
+.chiprain i { position: absolute; top: -40px; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; transform: scale(var(--s));
+  background: radial-gradient(circle, #c0392b 0 34%, #fff 35% 44%, #c0392b 45%); border: 3px dashed #fff; box-shadow: 0 3px 6px rgba(0, 0, 0, .5);
+  animation: chipfall linear forwards; }
+.chiprain i:nth-child(3n) { background: radial-gradient(circle, #1f6fb2 0 34%, #fff 35% 44%, #1f6fb2 45%); }
+.chiprain i:nth-child(4n) { background: radial-gradient(circle, #222 0 34%, #f2c14e 35% 44%, #222 45%); border-color: #f2c14e; }
+@keyframes chipfall { to { top: calc(100% + 40px); transform: scale(var(--s)) rotate(var(--spin)); } }
+.seatglow { position: fixed; z-index: 31; pointer-events: none; border-radius: 22px; border: 3px solid var(--gold);
+  box-shadow: 0 0 18px 6px rgba(242, 193, 78, .75), inset 0 0 18px rgba(242, 193, 78, .5); animation: seatglow 1s ease-in-out 3 alternate; }
+@keyframes seatglow { from { opacity: .35; transform: scale(.96); } to { opacity: 1; transform: scale(1.04); } }
 .winpop { position: fixed; z-index: 31; transform: translate(-50%, -50%); pointer-events: none; font-weight: 800; font-size: 20px; color: var(--green); text-shadow: 0 2px 6px #000; animation: winpop 1.6s ease-out forwards; }
 @keyframes winpop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 70% { opacity: 1; transform: translate(-50%, -110%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -150%) scale(1); } }
 .sitbar { display: flex; flex-direction: column; align-items: center; gap: 6px; }
