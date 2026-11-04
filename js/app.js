@@ -615,13 +615,18 @@
     return netStatus === 'online' && (id === myId || id === S.hostId || online.has(id));
   }
 
-  // Emergency takeover: every phone holds the latest state, so a player can become the host.
-  // Only the first online player in seat order gets the button at 30 s, so two phones don't
-  // race for the room; after 90 s anyone can.
-  const TAKEOVER_BACKUP_S = 30, TAKEOVER_ANY_S = 90;
-  function takeoverBackup() {
-    const cands = S.players.filter((p) => p.id !== S.hostId && online.has(p.id));
-    return cands.find((p) => !p.left) || cands[0] || null;
+  // Automatic takeover: every phone holds the latest state, so another phone can carry on as host.
+  // Phones take turns in seat order (people at the table first) so two don't race for the room:
+  // the first after AUTO_FIRST_S, the next AUTO_STEP_S later if the first is gone too, and so on.
+  const AUTO_FIRST_S = 12, AUTO_STEP_S = 8;
+  function takeoverOrder() {
+    const cands = S.players.filter((p) => p.id !== S.hostId && !p.bot && online.has(p.id));
+    return cands.filter((p) => !p.left).concat(cands.filter((p) => p.left));
+  }
+  function myTakeoverAt() {
+    const order = takeoverOrder();
+    const i = order.findIndex((p) => p.id === myId);
+    return AUTO_FIRST_S + (i < 0 ? order.length : i) * AUTO_STEP_S;
   }
 
   function hostLostBanner() {
@@ -629,18 +634,31 @@
     const secs = Math.floor((Date.now() - hostLostAt) / 1000);
     const hw = hostWord();
     const hostName = (pById(S.hostId) || {}).name || hw;
-    const backup = takeoverBackup();
-    let body;
-    if (secs < TAKEOVER_BACKUP_S) body = `<span>⚠️ ติดต่อ${hw} (${esc(hostName)}) ไม่ได้ · ${secs} วิ — กำลังลองใหม่…</span>`;
-    else if (!backup || backup.id === myId || secs >= TAKEOVER_ANY_S) {
-      body = `<span>⚠️ ${hw} (${esc(hostName)}) หลุดไป ${secs} วิ — เล่นต่อจากเครื่องคุณได้</span>
-        <button class="primary" style="flex:none" data-a="takeover">👑 รับเป็น${hw}แทน</button>`;
-    } else {
-      body = `<span>⚠️ ${hw}หลุดไป ${secs} วิ · รอ <b>${esc(backup.name)}</b> กด "รับเป็น${hw}แทน" (อีก ${TAKEOVER_ANY_S - secs} วิ ทุกคนกดได้)</span>`;
-    }
+    const left = Math.max(0, myTakeoverAt() - secs);
+    const next = takeoverOrder().find((p) => AUTO_FIRST_S + takeoverOrder().indexOf(p) * AUTO_STEP_S > secs);
+    const who = next && next.id !== myId ? `<b>${esc(next.name)}</b> จะรับเป็น${hw}แทนอัตโนมัติ` : `เครื่องคุณจะรับเป็น${hw}แทนอัตโนมัติใน ${left} วิ`;
+    const body = `<span>⚠️ ติดต่อ${hw} (${esc(hostName)}) ไม่ได้ ${secs} วิ · ${who}</span>
+      <button class="primary sm" style="flex:none" data-a="takeover">👑 รับแทนเลย</button>`;
     return `<div class="banner row hostlost">${body}</div>`;
   }
-  setInterval(() => { if (role === 'client' && hostLostAt != null && S) render(); }, 1000);
+  setInterval(() => {
+    if (role !== 'client' || hostLostAt == null || !S) return;
+    const secs = (Date.now() - hostLostAt) / 1000;
+    // a phone in the background (locked, another app open) would make a poor host: let the next one take it
+    if (secs >= myTakeoverAt() && document.visibilityState === 'visible' && !kicked) return takeOver(true);
+    render();
+  }, 1000);
+
+  function takeOver(auto) {
+    const was = (pById(S.hostId) || {}).name || hostWord();
+    S.hostId = myId;
+    S.log.push(`👑 ${myName} รับเป็นเจ้ามือแทน (${was} หลุด${auto ? ' · อัตโนมัติ' : ''})`);
+    // the app-dealt deck left with the old host: re-dealing mid-hand would change cards already seen
+    if (S.hand && !S.hand.done && S.hand.appCards) E.voidHand(S, 'สำรับไพ่อยู่ในเครื่องเจ้ามือเดิม');
+    net.destroy();
+    startHost(code, S, [], true);
+    toast(auto ? `${was} หลุด — เครื่องคุณเป็นเจ้ามือแทนแล้ว (เปิดแอปค้างไว้นะ)` : 'คุณเป็นเจ้ามือแล้ว', true);
+  }
 
   function table() {
     const h = S.hand;
@@ -1755,16 +1773,10 @@
         if (confirm(`ให้ ${p.name} เป็นเจ้ามือแทน?`)) { ui.sheet = null; handoff(d.id); render(); }
         break;
       }
-      case 'takeover': {
-        if (!confirm('รับเป็นเจ้ามือแทน? มือถือเครื่องนี้ต้องเปิดแอปค้างไว้ตลอดเกม')) return;
-        S.hostId = myId;
-        S.log.push(`👑 ${myName} รับเป็นเจ้ามือแทน (เจ้ามือเดิมหลุด)`);
-        // the app-dealt deck left with the old host: re-dealing mid-hand would change cards already seen
-        if (S.hand && !S.hand.done && S.hand.appCards) E.voidHand(S, 'สำรับไพ่อยู่ในเครื่องเจ้ามือเดิม');
-        net.destroy();
-        startHost(code, S, [], true);
+      case 'takeover':
+        if (!confirm('รับเป็นเจ้ามือแทนเลย? มือถือเครื่องนี้ต้องเปิดแอปค้างไว้ตลอดเกม')) return;
+        takeOver(false);
         break;
-      }
       case 'fillNum': document.getElementById(d.t).value = d.v; break;
       case 'gameType':
         document.getElementById('s_game').value = d.v;
