@@ -366,8 +366,8 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .tinfo button { padding: 2px 8px; font-size: 12px; }
 
 /* the cards that make the hand */
-.pc.hi { box-shadow: 0 0 0 3px var(--gold), 0 0 12px rgba(242, 193, 78, .7); }
-.pc.lo { filter: brightness(.6) saturate(.7); }
+.pc.hi { box-shadow: 0 0 0 3px var(--gold), 0 0 14px 3px rgba(242, 193, 78, .85); }
+.pc.lo { filter: none; }
 
 /* random name dice */
 .namerow input { flex: 1; }
