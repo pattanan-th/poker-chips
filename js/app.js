@@ -696,12 +696,14 @@
   function feltTable(potHtml) {
     const h = S.hand;
     const { W, H } = tableBox();
+    // short screens (small phones, Safari bars showing) shrink the seats, cards and middle a little
+    const k = Math.max(0.72, Math.min(1, (H - 60) / 470));
     const seated = S.players.filter((p) => !p.left);
     const mine = seated.findIndex((p) => p.id === myId);
     const order = mine > 0 ? seated.slice(mine).concat(seated.slice(0, mine)) : seated;
     const n = order.length;
     // seat centres run along the rail
-    const x0 = 42, x1 = W - 42, y0 = 46, y1 = H - 50;
+    const x0 = 42 * k, x1 = W - 42 * k, y0 = 46 * k, y1 = H - 50 * k;
     const per = 2 * ((x1 - x0) + (y1 - y0));
     const pct = (x, y) => `left:${(x / W * 100).toFixed(2)}%;top:${(y / H * 100).toFixed(2)}%`;
     const cx = W / 2; const cy = H / 2;
@@ -711,8 +713,10 @@
       const shown = h && h.shown && h.shown[p.id] && p.id !== myId ? h.shown[p.id] : null;
       // bet chips sit between the seat and the middle, clear of the seat's labels
       const vx = cx - x; const vy = cy - y; const len = Math.hypot(vx, vy) || 1;
-      const reach = Math.abs(vx / len) > 0.7 ? 46 : 80;
-      const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach)}">${fmt(s.betAmt)}</span>` : '';
+      const side = Math.abs(vx / len) > 0.7;
+      const reach = (side ? 50 : 80) * k;
+      // beside the avatar on side seats (the avatar is the top part of the seat), toward the middle elsewhere
+      const bet = s.betAmt && p.id !== myId ? `<span class="tbet" style="${pct(x + (vx / len) * reach, y + (vy / len) * reach - (side ? 24 * k : 0))}">${fmt(s.betAmt)}</span>` : '';
       return `<div class="seat ${s.cls}${p.id === myId ? ' me' : ''}" style="${pct(x, y)}">
           <div class="av">${esc(Array.from(p.name.trim())[0] || '?')}<span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${p.id === S.hostId ? '<i class="crown">👑</i>' : ''}${s.badges.length ? `<span class="sbadges">${s.badges.join('')}</span>` : ''}</div>
           <div class="snm">${nameHtml(p.name)}</div>
@@ -723,11 +727,11 @@
     }).join('');
     const meSeat = mine >= 0 ? trackPoint(0, x0, y0, x1, y1) : null;
     const meP = mine >= 0 ? seatInfo(seated[mine]) : null;
-    return `<div class="ptable" style="height:${H}px"><div class="rail"></div><div class="felt"></div>
+    return `<div class="ptable" style="height:${H}px;--k:${k.toFixed(3)}"><div class="rail"></div><div class="felt"></div>
       <div class="tcenter"><div class="pot">${potHtml}</div>
         <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button>`
           : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>'}<button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button></div>
-      </div>${seats}${meSeat ? myCardsAtSeat(meSeat[0] / W * 100, (meSeat[1] - 80) / H * 100, meP.betAmt) : ''}</div>`;
+      </div>${seats}${meSeat ? myCardsAtSeat(meSeat[0] / W * 100, (meSeat[1] - 80 * k) / H * 100, meP.betAmt) : ''}</div>`;
   }
 
   // My hole cards in front of my seat, with what I hold, my chance to win and my bet.

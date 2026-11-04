@@ -262,7 +262,7 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .ptable .rail, .ptable .felt { position: absolute; --c: 54px; clip-path: polygon(var(--c) 0, calc(100% - var(--c)) 0, 100% var(--c), 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, var(--c) 100%, 0 calc(100% - var(--c)), 0 var(--c)); }
 .ptable .rail { inset: 46px 44px 58px; background: linear-gradient(135deg, #6b4128, #3e2414 60%, #5a3620); }
 .ptable .felt { inset: 56px 54px 68px; --c: 50px; background: radial-gradient(ellipse at 50% 45%, #1a7355, #0d4a37 75%); box-shadow: inset 0 0 40px rgba(0, 0, 0, .55); }
-.tcenter { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); width: 46%; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; z-index: 1; }
+.tcenter { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(var(--k, 1)); width: 46%; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; z-index: 1; }
 .tcenter .pot { padding: 0; }
 .tcenter .pot .lbl { font-size: 12px; }
 .tcenter .pot .amt { font-size: 28px; line-height: 1.05; }
@@ -274,7 +274,7 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .tcenter .hosttools, .tlinks { display: flex; justify-content: center; gap: 4px; margin: 0; width: auto; }
 .tcenter .hosttools button, .tlinks button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; font-size: 16px; border-radius: 50%; background: rgba(0, 0, 0, .3); border: 1px solid var(--line); }
 .tcenter .hosttools button span { display: none; }
-.seat { position: absolute; transform: translate(-50%, -50%); width: 84px; display: flex; flex-direction: column; align-items: center; text-align: center; z-index: 2; line-height: 1.15; }
+.seat { position: absolute; transform: translate(-50%, -50%) scale(var(--k, 1)); width: 84px; display: flex; flex-direction: column; align-items: center; text-align: center; z-index: 2; line-height: 1.15; }
 .seat .av { position: relative; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 20px; background: #1d5a46; border: 2px solid var(--line); box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
 .seat.me .av { border-color: var(--gold); }
 .seat .av .dot { position: absolute; right: -1px; bottom: -1px; margin: 0; border: 2px solid var(--felt); }
@@ -289,10 +289,10 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .seat .won { color: var(--green); }
 .seat.turn .av { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold), 0 0 16px rgba(242, 193, 78, .7); }
 .seat.fold, .seat.idle { opacity: .45; }
-.tbet { position: absolute; transform: translate(-50%, -50%); z-index: 2; background: #0a2e23; border: 1px dashed var(--gold); color: var(--gold); border-radius: 99px; padding: 1px 8px; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.tbet { position: absolute; transform: translate(-50%, -50%) scale(var(--k, 1)); z-index: 2; background: #0a2e23; border: 1px dashed var(--gold); color: var(--gold); border-radius: 99px; padding: 1px 8px; font-size: 13px; font-weight: 800; white-space: nowrap; }
 .tbet.inline { position: static; transform: none; }
 .tbet::before { content: "●"; color: #d0312d; margin-right: 3px; font-size: 10px; }
-.tmycards { position: absolute; transform: translate(-50%, -50%); z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.tmycards { position: absolute; transform: translate(-50%, -50%) scale(var(--k, 1)); z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .tmycards .pcs { cursor: pointer; gap: 4px; }
 .tmycards .pc { width: 46px; height: 64px; font-size: 22px; box-shadow: 0 3px 8px rgba(0, 0, 0, .6); }
 .tmycards .pc i { font-size: 20px; }
