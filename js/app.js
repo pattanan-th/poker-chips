@@ -55,7 +55,10 @@
     return `${x.toLocaleString('en-US')}BB`;
   };
   // log / action text carries raw chip numbers ("Raise to 30", "ได้ 120"); show them in BB too when that unit is on
-  const logTxt = (t) => (unitBB() ? String(t).replace(/(Raise to |Bet |Call |SB |BB |Ante |All-in |Rebuy \+|ได้ |ชิป |ยอด |→ )(-?\d[\d,]*)/g, (m, pre, n) => pre + fb(Number(n.replace(/,/g, '')))) : t);
+  const logTxt = (t) => (unitBB() ? String(t).replace(/(Raise to |Bet |Call |SB |BB |Ante |ante |All-in |Rebuy \+|ได้ |ชิป |ยอด |→ )(-?\d[\d,]*)/g, (m, pre, n) => pre + fb(Number(n.replace(/,/g, '')))).replace(/(Blinds |ขึ้นเป็น )(\d[\d,]*)\/(\d[\d,]*)/g, (m, pre, a, b) => pre + blindsTxt(Number(a.replace(/,/g, '')), Number(b.replace(/,/g, '')))) : t);
+  // 25/50 -> 0.5/1BB when the unit is BB
+  const blindsTxt = (sb, bb, ante) => (unitBB() ? `${fb(sb).replace('BB', '')}/${fb(bb)}` : `${fmt(sb)}/${fmt(bb)}`) + (ante ? ` · ante ${fb(ante)}` : '');
+  const bbVal = (n) => Math.round((Number(n || 0) / E.blinds(S).bb) * 100) / 100;
   const amtU = (n, unit) => (unit === 'ชิป' && unitBB() ? fb(n) : `${fmt(n)} ${unit}`);
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const pById = (id) => S && S.players.find((p) => p.id === id);
@@ -719,7 +722,7 @@
     return `<div class="topbar"><div class="in">
       ${statusDot()}
       <span class="code" data-a="sheet" data-v="invite">${esc(code)}</span>
-      <span class="blinds">${isPD() ? `ป๊อกเด้ง${S.pd ? ` · รอบ ${S.pd.round.no}` : ''}` : `${tour ? `Lv${S.level + 1} · ` : ''}${fmt(b.sb)}/${fmt(b.bb)}${b.ante ? ` · ante ${fmt(b.ante)}` : ''}`}</span>
+      <span class="blinds">${isPD() ? `ป๊อกเด้ง${S.pd ? ` · รอบ ${S.pd.round.no}` : ''}` : `${tour ? `Lv${S.level + 1} · ` : ''}${blindsTxt(b.sb, b.bb, b.ante)}`}</span>
       ${tour || S.settings.sessionMin > 0 ? `<span class="timer ${S.pausedAt != null ? 'paused' : ''}" id="timer"></span>` : ''}
       <span class="spacer"></span>
       ${isHost() ? `<button class="sm" data-a="sheet" data-v="menu">☰ ${hostWord()}</button>` : `<button class="sm ghost" data-a="sheet" data-v="menu">☰</button>`}
@@ -1309,7 +1312,7 @@
       const rangeMax = credit() && !a.plo ? Math.max(a.minTo + step * 10, q(2)) : a.maxTo;
       raise = `<div class="raise">
         <div class="amt"><span class="muted small">${a.isBet ? 'Bet' : 'Raise to'}</span>
-          <input id="raiseInput" type="number" inputmode="numeric" enterkeyhint="done" min="${a.minTo}" max="${a.maxTo}" value="${ui.raiseTo}" aria-label="จำนวนชิป"></div>
+          ${unitBB() ? `<input id="raiseInput" type="text" inputmode="decimal" enterkeyhint="done" data-min="${a.minTo}" data-max="${a.maxTo}" value="${bbVal(ui.raiseTo)}" aria-label="จำนวน BB"><span class="muted">BB</span>` : `<input id="raiseInput" type="number" inputmode="numeric" enterkeyhint="done" data-min="${a.minTo}" data-max="${a.maxTo}" min="${a.minTo}" max="${a.maxTo}" value="${ui.raiseTo}" aria-label="จำนวนชิป">`}</div>
         <div class="raisehint" id="raiseHint">ขั้นต่ำ ${fb(a.minTo)}${a.capped ? ` · สูงสุด ${fb(a.maxTo)} (Pot)` : credit() ? ' · ไม่จำกัดสูงสุด' : ` · สูงสุด ${fb(a.maxTo)} (All-in)`}</div>
         <div class="row"><button class="sm" style="flex:none" data-a="step" data-v="${-step}">−</button>
           <input type="range" id="raiseRange" min="${a.minTo}" max="${rangeMax}" step="1" value="${ui.raiseTo}">
@@ -1685,7 +1688,7 @@
       <div id="cashBox" ${st.mode === 'cash' ? '' : 'hidden'}>
         ${lab('Blinds', 'blinds', 'SB / BB / Ante · ใส่ SB หรือ BB อย่างใดอย่างหนึ่ง อีกฝั่งคิดให้เอง (BB = 2 × SB) แก้ทับได้ · Ante = ทุกคนจ่ายก่อนแจกไพ่ ใส่ 0 = ไม่มี · เปลี่ยนแล้วมีผลตั้งแต่มือถัดไป')}
         <div class="grid3"><input id="s_sb" type="number" inputmode="numeric" value="${st.sb}" placeholder="SB" aria-label="SB"><input id="s_bb" type="number" inputmode="numeric" value="${st.bb}" placeholder="BB" aria-label="BB"><input id="s_ante" type="number" inputmode="numeric" value="${st.ante || 0}" placeholder="Ante" aria-label="Ante"></div>
-        <div class="grid3 sub"><span>SB</span><span>BB</span><span>Ante</span></div>
+        <div class="grid3 sub" id="blindSub">${blindSubHtml(st.sb, st.bb, st.ante || 0)}</div>
         <div id="moneyBuyIn" ${st.credit ? 'hidden' : ''}>${lab('บาท / 1 buy-in', 'money', 'ใช้คิดเงินในหน้าสรุปว่าใครโอนให้ใคร · 0 = ไม่คิดเป็นเงิน')}<input id="s_money" type="number" inputmode="numeric" value="${st.buyInValue || 0}"></div>
         <div id="moneyCredit" ${st.credit ? '' : 'hidden'}>${lab('บาท / 1 ชิป', 'rate', 'ใช้คิดเงินในหน้าสรุปว่าใครโอนให้ใคร · 0 = ไม่คิดเป็นเงิน')}<input id="s_rate" type="number" inputmode="decimal" step="any" min="0" value="${st.chipBaht || 0}"></div>
       </div>
@@ -1698,6 +1701,17 @@
       </div>
       ${midHand ? '<p class="muted small center">เกม / แบบไพ่ เปลี่ยนได้หลังจบมือ</p>' : ''}</div>`,
       '<button class="primary sm" data-a="saveSettings">บันทึก</button>'];
+  }
+
+  // in the BB unit the settings page also shows each blind as a multiple of the big blind
+  function blindSubHtml(sb, bb, ante) {
+    const x = (label, n) => `<span>${label}${unitBB() && bb > 0 ? ` · ${Math.round((n / bb) * 100) / 100}BB` : ''}</span>`;
+    return x('SB', sb) + x('BB', bb) + x('Ante', ante);
+  }
+  function updBlindSub() {
+    const el = document.getElementById('blindSub'); if (!el) return;
+    const v = (id) => Math.max(0, Number((document.getElementById(id) || {}).value) || 0);
+    el.innerHTML = blindSubHtml(v('s_sb'), v('s_bb'), v('s_ante'));
   }
 
   function levelRow(l, i, current) {
@@ -1844,7 +1858,7 @@
     const hs = (S.history || []).slice().reverse();
     const cur = S.hand && !S.hand.done ? S.hand : null;
     const live = cur ? `<details class="hand" open><summary><b>มือที่ ${cur.no}</b>${cur.actions[0] && cur.actions[0].at ? ` <span class="tm">${clockAt(cur.actions[0].at)}</span>` : ''} · <span class="gold">กำลังเล่น (${E.streetName(cur.street)})</span></summary>
-        <div class="muted small">Blinds ${fmt(cur.blinds.sb)}/${fmt(cur.blinds.bb)}${cur.blinds.ante ? ` ante ${fmt(cur.blinds.ante)}` : ''} · Dealer ${esc((pById(cur.btn) || {}).name || '?')} · Pot ${fb(E.potTotal(cur))}</div>
+        <div class="muted small">Blinds ${blindsTxt(cur.blinds.sb, cur.blinds.bb, cur.blinds.ante)} · Dealer ${esc((pById(cur.btn) || {}).name || '?')} · Pot ${fb(E.potTotal(cur))}</div>
         ${cur.appCards && cur.board && cur.board.length ? `<div class="hst"><b>Board</b> ${cardsHtml(cur.board, 'sm')}</div>` : ''}
         ${actionLines(cur, (id) => esc((pById(id) || {}).name || '?'))}</details>` : '';
     const signed = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : 'muted'}">${n > 0 ? '+' : ''}${fb(n)}</span>`;
@@ -1857,7 +1871,7 @@
       const ended = h.street === 'showdown' ? (h.runout ? 'All-in showdown' : 'Showdown') : `จบที่ ${E.streetName(h.street)} (คนอื่น Fold)`;
       const deltas = h.ids.slice().sort((a, b) => h.delta[b] - h.delta[a]).map((id) => `<span>${nm(id)} ${signed(h.delta[id])}</span>`).join('');
       return `<details class="hand" ${i === 0 && !cur ? 'open' : ''}><summary><b>มือที่ ${h.no}</b>${h.actions[0] && h.actions[0].at ? ` <span class="tm">${clockAt(h.actions[0].at)}</span>` : ''} · ${winners || '-'}${mine}</summary>
-        <div class="muted small">Blinds ${fmt(h.blinds.sb)}/${fmt(h.blinds.bb)}${h.blinds.ante ? ` ante ${fmt(h.blinds.ante)}` : ''} · Dealer ${nm(h.btn)} · ${ended}</div>
+        <div class="muted small">Blinds ${blindsTxt(h.blinds.sb, h.blinds.bb, h.blinds.ante)} · Dealer ${nm(h.btn)} · ${ended}</div>
         ${h.board ? `<div class="hst"><b>Board</b> ${h.board.length ? cardsHtml(h.board, 'sm') : '-'}</div>` : ''}
         ${h.shown ? Object.entries(h.shown).map(([id, x]) => `<div class="hst">${nm(id)} ${cardsHtml(x.cards, 'sm')} ${esc(x.hand)}</div>`).join('') : ''}
         ${streets}<div class="hst"><b>ผล</b> ${pots}</div><div class="hdelta">${deltas}</div></details>`;
@@ -1914,7 +1928,7 @@
 
   document.addEventListener('input', (e) => {
     if (e.target.id === 'raiseRange') { ui.raiseTo = Number(e.target.value); syncRaise(); }
-    if (e.target.id === 'raiseInput') { ui.raiseTo = Math.floor(Number(e.target.value) || 0); syncRaise(true); }
+    if (e.target.id === 'raiseInput') { ui.raiseTo = unitBB() ? Math.round((parseFloat(String(e.target.value).replace(',', '.')) || 0) * E.blinds(S).bb) : Math.floor(Number(e.target.value) || 0); syncRaise(true); }
     if (e.target.id === 'pdBetInput') { ui.pdDraft = e.target.value; syncPdBet(); }
     if (e.target.id === 'emojiIn') { const v = cleanEmoji(e.target.value); e.target.classList.toggle('on', !!v); setEmoji(v); }
     const k = e.target.dataset && e.target.dataset.k;
@@ -1922,6 +1936,7 @@
     const twin = (id, val) => { const o = document.getElementById(id); if (o) o.value = val; };
     if (e.target.id === 's_sb') twin('s_bb', (Math.floor(Number(e.target.value)) || 0) * 2);
     if (e.target.id === 's_bb') twin('s_sb', Math.floor((Number(e.target.value) || 0) / 2));
+    if (e.target.id === 's_sb' || e.target.id === 's_bb' || e.target.id === 's_ante') updBlindSub();
     if (k === 'sb' || k === 'bb') {
       const row = e.target.closest('.lvrow');
       if (k === 'sb') row.querySelector('[data-k=bb]').value = (Math.floor(Number(e.target.value)) || 0) * 2;
@@ -1958,9 +1973,9 @@
   function syncRaise(typing) {
     const inp = document.getElementById('raiseInput');
     if (!inp) return;
-    if (!typing) inp.value = ui.raiseTo;
+    if (!typing) inp.value = unitBB() ? bbVal(ui.raiseTo) : ui.raiseTo;
     const r = document.getElementById('raiseRange'); if (r && Number(r.value) !== ui.raiseTo) r.value = ui.raiseTo;
-    const ok = ui.raiseTo >= Number(inp.min) && ui.raiseTo <= Number(inp.max);
+    const ok = ui.raiseTo >= Number(inp.dataset.min) && ui.raiseTo <= Number(inp.dataset.max);
     inp.classList.toggle('bad', !ok);
     document.getElementById('raiseHint').classList.toggle('bad', !ok);
     const g = document.getElementById('raiseGo');
