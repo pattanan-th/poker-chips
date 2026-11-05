@@ -97,6 +97,9 @@ h2 { font-size: 18px; margin: 0 0 8px; }
 /* action bar */
 .actbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: rgba(6, 30, 22, .97); border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
 .actbar .in { max-width: 560px; margin: 0 auto; }
+.qrow { display: flex; gap: 8px; margin-top: 8px; }
+.qrow button { flex: 1; padding: 8px 6px; font-size: 13px; background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.qrow button.primary { background: var(--gold); color: #1d1600; border-color: var(--gold); }
 .actbar .who { font-size: 14px; color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
 .actbar .who b { color: var(--gold); }
 .actbar .btns { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr; gap: 8px; }

@@ -1241,6 +1241,19 @@
       <button class="primary" style="width:100%" data-a="award" ${ready ? '' : 'disabled'}>ยืนยันผู้ชนะ</button></div>`;
   }
 
+  // Rest / stand-up one tap away (not on my own turn, where the action buttons need the room)
+  function quickRow() {
+    const me = pById(myId);
+    if (!me || me.left || me.watching || me.out) return '';
+    const rest = me.sitOut
+      ? `<button class="sm primary" data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="">▶ กลับมาเล่น</button>`
+      : `<button class="sm ghost" data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="1">⏸ พักรอบนี้</button>`;
+    const stand = me.leaving === 'stand'
+      ? `<button class="sm ghost" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="">↩ ยกเลิกการลุก</button>`
+      : `<button class="sm ghost" data-a="stand" data-pid="${esc(myId)}">🚪 ลุกจากโต๊ะ</button>`;
+    return `<div class="qrow">${isPD() ? '' : rest}${stand}</div>`;
+  }
+
   function bottomBar(actor) {
     const h = S.hand;
     if (!h && S.handNo === 0) return '';
@@ -1266,7 +1279,7 @@
       const p = pById(h.toAct);
       inner = `<div class="waitbar">ตาของ <b>${esc(p.name)}</b>${turnEnds(h) ? ` · ⏱ ${cdHtml(turnEnds(h))} วิ` : ''}${isHost() ? ` · <button class="sm ghost" data-a="proxy">กดแทน</button>` : ''}</div>${preBar(h)}`;
     } else return '';
-    return `<div class="actbar"><div class="in">${inner}</div></div>`;
+    return `<div class="actbar"><div class="in">${inner}${quickRow()}</div></div>`;
   }
 
   // Pre-actions: while someone else is deciding, the player picks what to do on their turn and
