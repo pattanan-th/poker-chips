@@ -231,7 +231,7 @@
   }
   const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
-  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'leaveSeat', 'rename', 'avatar', 'pdBet', 'show', 'showBots'];
+  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'leaveSeat', 'rename', 'avatar', 'pdBet', 'show', 'showBots', 'peekBoard'];
   // Pok Deng: the banker runs the round from their own phone too
   const BANKER_CMDS = ['pdBet', 'pdDeal', 'pdReopen', 'pdSettle'];
 
@@ -294,6 +294,17 @@
       // a break: after this hand the table waits (no auto-start) until the host starts the next one
       case 'breakNext': S.breakNext = !!cmd.v; return;
       // host taps once: every bot that still hides its cards shows them (hand must be over)
+      // everyone folded early: anyone may look at the flop / turn / river that would have come
+      case 'peekBoard': {
+        const h = S.hand; const d = h && secrets[h.no];
+        if (!h || !h.done || !h.appCards || !d) throw new Error('ดูไพ่กลางได้หลังจบมือ (เฉพาะโหมดแอปแจกไพ่)');
+        const have = (h.board || []).length;
+        if (have >= 5 || h.peek) return;
+        h.peek = d.board.slice(have);
+        const last = S.history && S.history[S.history.length - 1];
+        if (last && last.no === h.no) last.peek = h.peek;
+        return;
+      }
       case 'showBots': {
         const h = S.hand;
         if (!h || !h.done) throw new Error('โชว์ไพ่บอทได้หลังจบมือ');
@@ -450,6 +461,14 @@
   // the host does it because it holds the cards
   const hiddenBots = (h) => !!(h && h.done && h.appCards && (!isHost() || secrets[h.no])
     && h.ids.some((id) => (pById(id) || {}).bot && !(h.shown && h.shown[id]) && (!isHost() || secrets[h.no].hole[id])));
+  // after an early finish, a button to see the board cards that were never dealt out
+  const canPeek = (h) => !!(h && h.done && h.appCards && !h.peek && (h.board || []).length < 5 && (!isHost() || secrets[h.no]));
+  const peekBtn = (h) => {
+    if (!canPeek(h)) return '';
+    const n = (h.board || []).length;
+    const names = n === 0 ? 'Flop · Turn · River' : n === 3 ? 'Turn · River' : 'River';
+    return `<div class="row" style="margin-bottom:8px"><button class="ghost" data-a="cmd" data-c="peekBoard" data-pid="${esc(myId)}">👁 ดูไพ่กลางที่เหลือ (${names})</button></div>`;
+  };
   const botShowBtn = (h) => (hiddenBots(h) ? `<div class="row" style="margin-bottom:8px"><button class="blue" data-a="cmd" data-c="showBots" data-pid="${esc(myId)}">🤖 ดูไพ่บอททุกตัว</button></div>` : '');
   const nextStarts = (h) => (S.settings.autoNext > 0 && !S.breakNext && h && h.done && h.doneAt && E.eligible(S).length >= 2 ? h.doneAt + S.settings.autoNext * 1000 : null);
 
@@ -1194,7 +1213,9 @@
   const cardsHtml = (list, size, key) => `<span class="pcs">${list.map((c, i) => cardHtml(c, size, key, i)).join('')}</span>`;
   function boardHtml(board) {
     const firstNew = board.findIndex((c) => !flipSeen.has(`b${S.hand.no}:${c}`));
-    const slots = [0, 1, 2, 3, 4].map((i) => (i < board.length ? cardHtml(board[i], '', `b${S.hand.no}`, firstNew < 0 ? 0 : i - firstNew) : '<span class="pc slot"></span>')).join('');
+    const peek = S.hand.peek || [];
+    const slots = [0, 1, 2, 3, 4].map((i) => (i < board.length ? cardHtml(board[i], '', `b${S.hand.no}`, firstNew < 0 ? 0 : i - firstNew)
+      : peek[i - board.length] ? cardHtml(peek[i - board.length], 'peek', `p${S.hand.no}`, i - board.length) : '<span class="pc slot"></span>')).join('');
     return `<div class="board">${slots}</div>`;
   }
 
@@ -1267,6 +1288,8 @@
     return rest + stand;
   }
 
+  const postBtns = (h) => botShowBtn(h) + peekBtn(h);
+
   function bottomBar(actor) {
     const h = S.hand;
     if (!h && S.handNo === 0) return '';
@@ -1283,10 +1306,10 @@
       if (isHost()) {
         const over = S.settings.mode === 'tournament' && E.eligible(S).length < 2 && S.handNo > 0;
         inner = over ? `<div class="grid2">${rebuy || ''}<button class="primary" data-a="sheet" data-v="summary">🏆 สรุปผล</button></div>`
-          : `${botShowBtn(h)}<div class="row">${rebuy}<button class="primary" style="padding:16px" data-a="cmd" data-c="start">เริ่มมือถัดไป ▶${nextStarts(h) ? ` <small>(อัตโนมัติใน ${cdHtml(nextStarts(h))} วิ)</small>` : ''}</button></div>`;
+          : `${postBtns(h)}<div class="row">${rebuy}<button class="primary" style="padding:16px" data-a="cmd" data-c="start">เริ่มมือถัดไป ▶${nextStarts(h) ? ` <small>(อัตโนมัติใน ${cdHtml(nextStarts(h))} วิ)</small>` : ''}</button></div>`;
       } else {
         const wait = nextStarts(h) ? `มือถัดไปเริ่มใน ${cdHtml(nextStarts(h))} วิ` : S.breakNext ? '☕ พักห้องอยู่ — รอเจ้ามือเริ่มมือถัดไป' : 'รอเจ้ามือเริ่มมือถัดไป…';
-        inner = botShowBtn(h) + (rebuy ? `<div class="row">${rebuy}</div>${nextStarts(h) ? `<div class="waitbar" style="margin-top:6px">${wait}</div>` : ''}` : `<div class="waitbar">${wait}</div>`);
+        inner = postBtns(h) + (rebuy ? `<div class="row">${rebuy}</div>${nextStarts(h) ? `<div class="waitbar" style="margin-top:6px">${wait}</div>` : ''}` : `<div class="waitbar">${wait}</div>`);
       }
     } else if (h.toAct) {
       const p = pById(h.toAct);
