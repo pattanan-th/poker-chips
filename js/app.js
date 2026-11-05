@@ -999,9 +999,12 @@
 
   // My hole cards in front of my seat, with what I hold, my chance to win and my bet.
   // After folding, the hand you'd have held so far (for the regret): empty until the flop
+  // the board as it is, plus the cards revealed afterwards with the "see the rest" button
+  const fullBoard = (h) => (h.board || []).concat(h.peek || []);
   function regretHand(h, cards) {
-    if (!h.folded[myId] || !cards || !h.board || h.board.length < 3) return null;
-    const b = Cards.bestFor(cards, h.board, h.game);
+    const bd = fullBoard(h);
+    if (!h.folded[myId] || !cards || bd.length < 3) return null;
+    const b = Cards.bestFor(cards, bd, h.game);
     return b ? b.name : null;
   }
   function myCardsAtSeat(xPct, yPct, myBet) {
@@ -1009,7 +1012,7 @@
     const bet = myBet ? `<span class="tbet inline">${fb(myBet)}</span>` : '';
     if (!h || !cards) return bet ? `<div class="tmycards" style="left:${xPct.toFixed(2)}%;top:${(yPct + 6).toFixed(2)}%">${bet}</div>` : '';
     const folded = h.folded[myId];
-    const made = !folded && h.board && h.board.length >= 3 ? Cards.bestFor(cards, h.board, h.game) : null;
+    const made = !folded && fullBoard(h).length >= 3 ? Cards.bestFor(cards, fullBoard(h), h.game) : null;
     const eq = folded || h.done || h.street === 'showdown' ? null : winChance(h, cards);
     const shownMine = h.shown && h.shown[myId];
     const regret = regretHand(h, cards);
@@ -1193,15 +1196,16 @@
   // my best hand while I'm in it, the winner's once the hand is shown down.
   let hl = null;
   function highlightFor(h) {
-    if (!h || !h.appCards || !h.board || h.board.length < 3) return null;
+    const bd = h ? fullBoard(h) : [];
+    if (!h || !h.appCards || bd.length < 3) return null;
     let cards = null;
     if (h.done && h.shown) {
       const win = Object.keys(h.result || {}).find((id) => h.shown[id]);
       if (win) cards = h.shown[win].cards;
     } else cards = myHole(); // still lit after folding: the hand you would have had
-    const b = cards && Cards.bestFor(cards, h.board, h.game);
+    const b = cards && Cards.bestFor(cards, bd, h.game);
     if (!b) return null;
-    return { on: new Set(b.made), pool: new Set(cards.concat(h.board)) };
+    return { on: new Set(b.made), pool: new Set(cards.concat(bd)) };
   }
   function cardHtml(c, size, key, i) {
     if (c == null) return `<span class="pc back ${size || ''}"></span>`;
@@ -1238,7 +1242,7 @@
     const h = S.hand; const cards = myHole();
     if (!h || !cards) return '';
     const folded = h.folded[myId];
-    const made = !folded && h.board && h.board.length >= 3 ? Cards.bestFor(cards, h.board, h.game) : null;
+    const made = !folded && fullBoard(h).length >= 3 ? Cards.bestFor(cards, fullBoard(h), h.game) : null;
     const eq = folded || h.done || h.street === 'showdown' ? null : winChance(h, cards);
     const shown = h.shown && h.shown[myId];
     const showBtn = h.done ? (shown ? '<br><span class="muted">ทุกคนเห็นไพ่คุณแล้ว</span>'
