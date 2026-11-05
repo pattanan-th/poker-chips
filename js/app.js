@@ -231,7 +231,7 @@
   }
   const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
-  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'leaveSeat', 'rename', 'avatar', 'pdBet', 'show'];
+  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'leaveSeat', 'rename', 'avatar', 'pdBet', 'show', 'showBots'];
   // Pok Deng: the banker runs the round from their own phone too
   const BANKER_CMDS = ['pdBet', 'pdDeal', 'pdReopen', 'pdSettle'];
 
@@ -446,9 +446,11 @@
   const clockAt = (at) => (at ? new Date(at - clockSkew).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '');
   const tmHtml = (at) => (at ? `<span class="tm">${clockAt(at)}</span>` : '');
   const turnEnds = (h) => (S.settings.actSec > 0 && h && !h.done && h.toAct && h.street !== 'showdown' && h.turnAt ? h.turnAt + S.settings.actSec * 1000 : null);
-  // bots whose cards are still hidden once the hand is over (host only: it holds the cards)
-  const hiddenBots = (h) => !!(isHost() && h && h.done && h.appCards && secrets[h.no]
-    && h.ids.some((id) => (pById(id) || {}).bot && !(h.shown && h.shown[id]) && secrets[h.no].hole[id]));
+  // bots that still hide their cards once the hand is over; anyone may reveal them (the hand is finished),
+  // the host does it because it holds the cards
+  const hiddenBots = (h) => !!(h && h.done && h.appCards && (!isHost() || secrets[h.no])
+    && h.ids.some((id) => (pById(id) || {}).bot && !(h.shown && h.shown[id]) && (!isHost() || secrets[h.no].hole[id])));
+  const botShowBtn = (h) => (hiddenBots(h) ? `<div class="row" style="margin-bottom:8px"><button class="blue" data-a="cmd" data-c="showBots" data-pid="${esc(myId)}">🤖 ดูไพ่บอททุกตัว</button></div>` : '');
   const nextStarts = (h) => (S.settings.autoNext > 0 && !S.breakNext && h && h.done && h.doneAt && E.eligible(S).length >= 2 ? h.doneAt + S.settings.autoNext * 1000 : null);
 
   // Clock ticking for the player whose turn it is: once a second over the last 10 s, faster and higher in the last 3
@@ -1255,10 +1257,10 @@
       if (isHost()) {
         const over = S.settings.mode === 'tournament' && E.eligible(S).length < 2 && S.handNo > 0;
         inner = over ? `<div class="grid2">${rebuy || ''}<button class="primary" data-a="sheet" data-v="summary">🏆 สรุปผล</button></div>`
-          : `${hiddenBots(h) ? `<div class="row" style="margin-bottom:8px"><button class="blue" data-a="cmd" data-c="showBots">🤖 โชว์ไพ่บอททุกตัว</button></div>` : ''}<div class="row">${rebuy}<button class="primary" style="padding:16px" data-a="cmd" data-c="start">เริ่มมือถัดไป ▶${nextStarts(h) ? ` <small>(อัตโนมัติใน ${cdHtml(nextStarts(h))} วิ)</small>` : ''}</button></div>`;
+          : `${botShowBtn(h)}<div class="row">${rebuy}<button class="primary" style="padding:16px" data-a="cmd" data-c="start">เริ่มมือถัดไป ▶${nextStarts(h) ? ` <small>(อัตโนมัติใน ${cdHtml(nextStarts(h))} วิ)</small>` : ''}</button></div>`;
       } else {
         const wait = nextStarts(h) ? `มือถัดไปเริ่มใน ${cdHtml(nextStarts(h))} วิ` : S.breakNext ? '☕ พักห้องอยู่ — รอเจ้ามือเริ่มมือถัดไป' : 'รอเจ้ามือเริ่มมือถัดไป…';
-        inner = rebuy ? `<div class="row">${rebuy}</div>${nextStarts(h) ? `<div class="waitbar" style="margin-top:6px">${wait}</div>` : ''}` : `<div class="waitbar">${wait}</div>`;
+        inner = botShowBtn(h) + (rebuy ? `<div class="row">${rebuy}</div>${nextStarts(h) ? `<div class="waitbar" style="margin-top:6px">${wait}</div>` : ''}` : `<div class="waitbar">${wait}</div>`);
       }
     } else if (h.toAct) {
       const p = pById(h.toAct);
