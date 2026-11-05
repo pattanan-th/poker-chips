@@ -457,6 +457,11 @@
       return apply({ c: 'act', pid: h.toAct, type: free ? 'check' : 'fold', timeout: true }, myId);
     }
     if (awayTick(h, t)) return;
+    // bots always show their cards once the hand is over (folded or not)
+    if (h && h.done && h.appCards) {
+      const hidden = h.ids.find((id) => (pById(id) || {}).bot && !(h.shown && h.shown[id]) && secrets[h.no] && secrets[h.no].hole[id]);
+      if (hidden) return apply({ c: 'show', pid: hidden }, myId);
+    }
     const ns = nextStarts(h);
     if (ns && t >= ns && autoTried !== h.no) { autoTried = h.no; apply({ c: 'start' }, myId); }
   }, 500);
