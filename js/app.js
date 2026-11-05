@@ -54,6 +54,9 @@
     const x = Math.round((Number(n || 0) / E.blinds(S).bb) * 10) / 10;
     return `${x.toLocaleString('en-US')}BB`;
   };
+  // log / action text carries raw chip numbers ("Raise to 30", "ได้ 120"); show them in BB too when that unit is on
+  const logTxt = (t) => (unitBB() ? String(t).replace(/(Raise to |Bet |Call |SB |BB |Ante |All-in |Rebuy \+|ได้ |ชิป |ยอด |→ )(-?\d[\d,]*)/g, (m, pre, n) => pre + fb(Number(n.replace(/,/g, '')))) : t);
+  const amtU = (n, unit) => (unit === 'ชิป' && unitBB() ? fb(n) : `${fmt(n)} ${unit}`);
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const pById = (id) => S && S.players.find((p) => p.id === id);
   // cash without buy-in: show each player's +/- balance instead of a chip count
@@ -811,7 +814,7 @@
         <span class="street">${E.streetName(h.street)}${GAME_TAG[h.game] ? ' · ' + GAME_TAG[h.game] : ''}</span>${hint ? `<div class="hint">${hint}</div>` : ''}`;
     }
     if (h && h.appCards) potHtml += boardHtml(h.board || []);
-    const lastLog = S.log.slice(-2).map(esc).join('<br>');
+    const lastLog = S.log.slice(-2).map((l) => esc(logTxt(l))).join('<br>');
     const me = pById(myId);
     const away = S.players.filter((p) => p.left);
     const standBanner = me && me.left && !me.watching ? `<div class="banner row"><span>คุณลุกจากโต๊ะแล้ว · ${chipWord()} ${chips(me)}</span>
@@ -956,7 +959,7 @@
     let st = null;
     h.actions.forEach((a) => {
       if (a.st !== st) { if (st) lines.push(`<i>— ${E.streetName(a.st)} —</i>`); st = a.st; }
-      lines.push(`${tmHtml(a.at)}${a.id ? `<b>${nm(a.id)}</b> ` : ''}${esc(a.t)}`);
+      lines.push(`${tmHtml(a.at)}${a.id ? `<b>${nm(a.id)}</b> ` : ''}${esc(logTxt(a.t))}`);
     });
     if (h.done && !h.voided) Object.entries(h.result || {}).forEach(([id, amt]) => lines.push(`${tmHtml(h.doneAt)}🏆 <b>${nm(id)}</b> ได้ ${fb(amt)}`));
     const recent = lines.slice(-max).reverse();
@@ -1354,7 +1357,7 @@
       <div class="players">${S.players.filter((p) => !p.left).map(pdRow).join('')}</div>
       ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b class="${toneOf(p.net || 0)}">${signedFmt(p.net || 0)}</b>`).join(' · ')}</div>` : ''}
       ${r.phase === 'result' ? (canRunRound() ? pdResultPanel() : '<div class="card center muted">เปิดไพ่ — รอเจ้ามือบันทึกผล…</div>') : ''}
-      <div class="lastlog" data-a="sheet" data-v="hands">${S.log.slice(-2).map(esc).join('<br>')}<br><u>ประวัติแต่ละรอบ</u></div>`;
+      <div class="lastlog" data-a="sheet" data-v="hands">${S.log.slice(-2).map((l) => esc(logTxt(l))).join('<br>')}<br><u>ประวัติแต่ละรอบ</u></div>`;
   }
 
   function pdHostTools() {
@@ -1757,7 +1760,7 @@
 
   function transfersHtml(owed, unit) {
     const tx = settle(owed);
-    return tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${fmt(t.amt)} ${unit}</b></div>`).join('')
+    return tx.length ? tx.map((t) => `<div class="tx"><span>${esc(t.from)}</span><span class="arrow">→</span><span>${esc(t.to)}</span><b>${amtU(t.amt, unit)}</b></div>`).join('')
       : `<p class="muted small">${owed.some((o) => o.amt) ? 'คำนวณการโอนไม่ได้ เพราะยอดรวมไม่ลงตัว (ดูหมายเหตุด้านล่าง)' : 'ยังไม่มีใครได้หรือเสีย'}</p>`;
   }
 
@@ -1770,7 +1773,7 @@
       <td class="${toneOf(net)}"><b>${signedFmt(net)}</b></td>${rate ? `<td class="${toneOf(net)}">${signedFmt(baht(net))}</td>` : ''}</tr>`).join('');
     const inPot = S.hand && !S.hand.done ? E.potTotal(S.hand) : 0;
     const sum = data.reduce((a, x) => a + x.net, 0) + inPot;
-    const totals = `<tr class="total"><td>รวมทั้งโต๊ะ${inPot ? `<div class="sub">+ ใน pot ${fmt(inPot)}</div>` : ''}</td>
+    const totals = `<tr class="total"><td>รวมทั้งโต๊ะ${inPot ? `<div class="sub">+ ใน pot ${fb(inPot)}</div>` : ''}</td>
       <td class="${toneOf(sum)}">${sum ? signedFmt(sum) : '✓ ลงตัว'}</td>${rate ? '<td></td>' : ''}</tr>`;
     const owed = data.map(({ p, net }) => ({ name: p.name, amt: rate ? baht(net) : net }));
     const unit = rate ? 'บาท' : 'ชิป';
@@ -1778,7 +1781,7 @@
     return ['สรุปประจำโต๊ะ', `<p class="muted small" style="margin-top:0">ไม่ต้อง buy-in · ทุกคนเริ่มที่ 0 แล้วได้/เสียตามที่เล่น</p>
       <table class="summary"><tr><th>ผู้เล่น</th><th>ได้/เสีย (ชิป)</th>${rate ? '<th>บาท</th>' : ''}</tr>${rows}${totals}</table>
       <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${transfersHtml(owed, unit)}
-      ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${fmt(off)} ${unit} (มีการแก้ยอด${rate ? ' หรือปัดเศษ' : ''})</p>` : ''}
+      ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${amtU(off, unit)} (มีการแก้ยอด${rate ? ' หรือปัดเศษ' : ''})</p>` : ''}
       ${inPot ? '<p class="muted small">* มือนี้ยังไม่จบ ชิปที่อยู่ใน pot ยังไม่ถูกนับ</p>' : ''}
       ${rate ? '' : '<p class="muted small">ตั้ง "1 ชิป = กี่บาท" ในตั้งค่า เพื่อให้คำนวณเป็นบาท</p>'}`];
   }
@@ -1789,7 +1792,7 @@
     if (st.mode === 'tournament') {
       const alive = S.players.filter((p) => !p.out).sort((a, b) => b.stack - a.stack);
       const outs = S.finishOrder.slice().reverse().map(pById).filter(Boolean);
-      const rows = alive.concat(outs).map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}</td><td>${p.out ? 'ตกรอบ' : fmt(p.stack)}</td></tr>`).join('');
+      const rows = alive.concat(outs).map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}</td><td>${p.out ? 'ตกรอบ' : fb(p.stack)}</td></tr>`).join('');
       return ['อันดับ', `<table><tr><th>ผู้เล่น</th><th>ชิป</th></tr>${rows}</table>`];
     }
     if (credit()) return creditSummary();
@@ -1802,19 +1805,19 @@
       // money in/out are rounded separately so each row's profit is exactly out − in
       return { p, inn, out: p.stack, net: p.stack - inn, cash: money ? baht(p.stack) - baht(inn) : 0 };
     }).sort((a, b) => b.net - a.net);
-    const cell = (chips, b) => `${fmt(chips)}${money ? `<div class="sub">${fmt(b)} บาท</div>` : ''}`;
+    const cell = (chips, b) => `${fb(chips)}${money ? `<div class="sub">${fmt(b)} บาท</div>` : ''}`;
     const rows = data.map(({ p, inn, out, net, cash }) => `<tr>
       <td>${esc(p.name)}${p.left ? ' 🚪' : ''}<div class="sub">ซื้อ ${p.buyIns} ครั้ง${p.left ? ' · ลุกแล้ว' : ''}</div></td>
       <td>${cell(inn, baht(inn))}</td>
       <td>${cell(out, baht(out))}</td>
-      <td class="${tone(net)}"><b>${signed(net)}</b>${money ? `<div class="sub ${tone(cash)}">${signed(cash)} บาท</div>` : ''}</td></tr>`).join('');
+      <td class="${tone(net)}"><b>${signedFmt(net)}</b>${money ? `<div class="sub ${tone(cash)}">${signed(cash)} บาท</div>` : ''}</td></tr>`).join('');
     const tIn = data.reduce((a, x) => a + x.inn, 0);
     const tOut = data.reduce((a, x) => a + x.out, 0);
     const inPot = S.hand && !S.hand.done ? E.potTotal(S.hand) : 0;
-    const totals = `<tr class="total"><td>รวมทั้งโต๊ะ${inPot ? `<div class="sub">+ ใน pot ${fmt(inPot)}</div>` : ''}</td>
+    const totals = `<tr class="total"><td>รวมทั้งโต๊ะ${inPot ? `<div class="sub">+ ใน pot ${fb(inPot)}</div>` : ''}</td>
       <td>${cell(tIn, data.reduce((a, x) => a + baht(x.inn), 0))}</td>
       <td>${cell(tOut, data.reduce((a, x) => a + baht(x.out), 0))}</td>
-      <td class="${tone(tOut + inPot - tIn)}">${tOut + inPot === tIn ? '✓ ลงตัว' : signed(tOut + inPot - tIn)}</td></tr>`;
+      <td class="${tone(tOut + inPot - tIn)}">${tOut + inPot === tIn ? '✓ ลงตัว' : signedFmt(tOut + inPot - tIn)}</td></tr>`;
     const owed = data.map(({ p, net, cash }) => ({ name: p.name, amt: money ? cash : net }));
     const unit = money ? 'บาท' : 'ชิป';
     const off = owed.reduce((a, o) => a + o.amt, 0);
@@ -1822,7 +1825,7 @@
     return ['สรุปประจำโต๊ะ', `<table class="summary"><tr><th>ผู้เล่น</th><th>เข้า</th><th>ออก</th><th>กำไร/ขาดทุน</th></tr>${rows}${totals}</table>
       <p class="muted small" style="margin:6px 0 0">เข้า = ชิปที่ซื้อทั้งหมด (รวม Rebuy) · ออก = ชิปที่ถืออยู่ตอนนี้ หรือตอนลุกจากโต๊ะ</p>
       <h2 style="margin:16px 0 6px">💸 ใครโอนให้ใคร</h2>${txHtml}
-      ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${fmt(off)} ${unit} (ชิปบนโต๊ะไม่ตรงกับยอด buy-in เช่น มีการแก้ชิป${money ? ' หรือปัดเศษ' : ''})</p>` : ''}
+      ${off ? `<p class="muted small">* ยอดรวมไม่ลงตัว ${off > 0 ? '+' : ''}${amtU(off, unit)} (ชิปบนโต๊ะไม่ตรงกับยอด buy-in เช่น มีการแก้ชิป${money ? ' หรือปัดเศษ' : ''})</p>` : ''}
       ${S.hand && !S.hand.done ? '<p class="muted small">* มือนี้ยังไม่จบ ชิปที่อยู่ใน pot ยังไม่ถูกนับ</p>' : ''}
       ${money ? '' : '<p class="muted small">ตั้ง "มูลค่าเงินต่อ 1 buy-in" ในตั้งค่า เพื่อให้คำนวณเป็นบาท</p>'}`];
   }
@@ -1832,7 +1835,7 @@
     return E.STREETS.slice(0, 4).map((st) => {
       const acts = h.actions.filter((a) => a.st === st);
       if (!acts.length) return '';
-      return `<div class="hst"><b>${E.streetName(st)}</b> ${acts.map((a) => `${a.id ? nm(a.id) + ' ' : 'ทุกคน '}${esc(a.t)}${a.at ? ` <span class="tm">${clockAt(a.at)}</span>` : ''}`).join(' · ')}</div>`;
+      return `<div class="hst"><b>${E.streetName(st)}</b> ${acts.map((a) => `${a.id ? nm(a.id) + ' ' : 'ทุกคน '}${esc(logTxt(a.t))}${a.at ? ` <span class="tm">${clockAt(a.at)}</span>` : ''}`).join(' · ')}</div>`;
     }).join('');
   }
 
@@ -1841,7 +1844,7 @@
     const hs = (S.history || []).slice().reverse();
     const cur = S.hand && !S.hand.done ? S.hand : null;
     const live = cur ? `<details class="hand" open><summary><b>มือที่ ${cur.no}</b>${cur.actions[0] && cur.actions[0].at ? ` <span class="tm">${clockAt(cur.actions[0].at)}</span>` : ''} · <span class="gold">กำลังเล่น (${E.streetName(cur.street)})</span></summary>
-        <div class="muted small">Blinds ${fmt(cur.blinds.sb)}/${fmt(cur.blinds.bb)}${cur.blinds.ante ? ` ante ${fmt(cur.blinds.ante)}` : ''} · Dealer ${esc((pById(cur.btn) || {}).name || '?')} · Pot ${fmt(E.potTotal(cur))}</div>
+        <div class="muted small">Blinds ${fmt(cur.blinds.sb)}/${fmt(cur.blinds.bb)}${cur.blinds.ante ? ` ante ${fmt(cur.blinds.ante)}` : ''} · Dealer ${esc((pById(cur.btn) || {}).name || '?')} · Pot ${fb(E.potTotal(cur))}</div>
         ${cur.appCards && cur.board && cur.board.length ? `<div class="hst"><b>Board</b> ${cardsHtml(cur.board, 'sm')}</div>` : ''}
         ${actionLines(cur, (id) => esc((pById(id) || {}).name || '?'))}</details>` : '';
     const signed = (n) => `<span class="${n > 0 ? 'pos' : n < 0 ? 'neg' : 'muted'}">${n > 0 ? '+' : ''}${fb(n)}</span>`;
@@ -1864,7 +1867,7 @@
   }
 
   function logSheet() {
-    return ['ประวัติ', `<div class="log">${S.log.slice().reverse().map((l) => `<div>${esc(l)}</div>`).join('')}</div>`];
+    return ['ประวัติ', `<div class="log">${S.log.slice().reverse().map((l) => `<div>${esc(logTxt(l))}</div>`).join('')}</div>`];
   }
 
   function qrSvg(text) {
