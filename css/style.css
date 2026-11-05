@@ -17,6 +17,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; background: radial-gradient(ellipse at top, var(--felt-2), var(--felt) 70%) fixed; color: var(--text);
   font: 16px/1.4 "Anakotmai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif; min-height: 100%; }
+html, body { background-color: var(--felt); } /* a plain colour too: Safari tints its top bar from it, a gradient alone reads as white */
 body { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 0; border-radius: 12px; padding: 12px 14px; background: #24584a; font-weight: 600; touch-action: manipulation; }
