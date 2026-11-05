@@ -956,7 +956,7 @@
     return `<div class="ptable${dense ? ' dense' : ''}" style="height:${H}px;--k:${k.toFixed(3)};--ks:${ks.toFixed(3)}"><div class="rail"></div><div class="felt"></div>
       <div class="tcenter"><div class="pot">${potHtml}</div>
         <div class="tlinks">${isHost() ? `<button data-a="cmd" data-c="undo" title="Undo" ${hist.length ? '' : 'disabled'}>↩️</button><button data-a="sheet" data-v="players" title="ผู้เล่น/ชิป">👥</button><button data-a="sheet" data-v="settings" title="ตั้งค่า">⚙️</button><button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button>`
-          : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button><button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button>'}</div>
+          : '<button data-a="sheet" data-v="summary" title="สรุป">📊</button><button data-a="sheet" data-v="ranks" title="อันดับไพ่">🏆</button><button data-a="sheet" data-v="hands" title="ประวัติรายมือ">📜</button>'}${quickIcons()}</div>
         ${tableLog(h, H > 620 ? 5 : H > 560 ? 4 : H > 480 ? 3 : 2)}
       </div>${seats}${meSeat ? myCardsAtSeat(meSeat[0] / W * 100, (meSeat[1] - 80 * k) / H * 100, meP.betAmt) : ''}</div>`;
   }
@@ -1254,6 +1254,19 @@
     return `<div class="qrow">${isPD() ? '' : rest}${stand}</div>`;
   }
 
+  // the same two actions as small round icons in the middle of the felt, next to the other tools
+  function quickIcons() {
+    const me = pById(myId);
+    if (!me || me.left || me.watching || me.out) return '';
+    const rest = isPD() ? '' : me.sitOut
+      ? `<button class="on" data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="" title="กลับมาเล่น">▶</button>`
+      : `<button data-a="cmd" data-c="sitout" data-pid="${esc(myId)}" data-v="1" title="พักรอบนี้">⏸</button>`;
+    const stand = me.leaving === 'stand'
+      ? `<button class="on" data-a="cmd" data-c="stand" data-pid="${esc(myId)}" data-v="" title="ยกเลิกการลุก">↩</button>`
+      : `<button data-a="stand" data-pid="${esc(myId)}" title="ลุกจากโต๊ะ">🚪</button>`;
+    return rest + stand;
+  }
+
   function bottomBar(actor) {
     const h = S.hand;
     if (!h && S.handNo === 0) return '';
@@ -1279,7 +1292,7 @@
       const p = pById(h.toAct);
       inner = `<div class="waitbar">ตาของ <b>${esc(p.name)}</b>${turnEnds(h) ? ` · ⏱ ${cdHtml(turnEnds(h))} วิ` : ''}${isHost() ? ` · <button class="sm ghost" data-a="proxy">กดแทน</button>` : ''}</div>${preBar(h)}`;
     } else return '';
-    return `<div class="actbar"><div class="in">${inner}${quickRow()}</div></div>`;
+    return `<div class="actbar"><div class="in">${inner}${ui.view === 'table' ? '' : quickRow()}</div></div>`;
   }
 
   // Pre-actions: while someone else is deciding, the player picks what to do on their turn and
