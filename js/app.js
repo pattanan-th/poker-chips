@@ -231,9 +231,9 @@
   }
   const fullMsg = () => `ห้องเต็มแล้ว (สูงสุด ${seatLimit()} คน)`;
 
-  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'leaveSeat', 'rename', 'avatar', 'pdBet', 'show', 'showBots', 'peekBoard'];
+  const PLAYER_CMDS = ['act', 'rebuy', 'sitout', 'stand', 'leaveSeat', 'rename', 'avatar', 'pdBet', 'show', 'showBots', 'peekBoard', 'pdCards'];
   // Pok Deng: the banker runs the round from their own phone too
-  const BANKER_CMDS = ['pdBet', 'pdDeal', 'pdReopen', 'pdSettle'];
+  const BANKER_CMDS = ['pdBet', 'pdDeal', 'pdReopen', 'pdSettle', 'pdCards', 'pdReveal'];
 
   function apply(cmd, from) {
     const fromHost = from === myId;
@@ -315,6 +315,8 @@
       case 'pdDeal': return PD.deal(S);
       case 'pdReopen': return PD.reopen(S);
       case 'pdSettle': return PD.settle(S, cmd.results);
+      case 'pdCards': return PD.setCards(S, cmd.pid, cmd.cards);
+      case 'pdReveal': return PD.reveal(S);
       case 'pdBanker': return PD.setBanker(S, cmd.pid);
       case 'pdNet': return PD.setNet(S, cmd.pid, cmd.v);
       case 'award': return E.award(S, cmd.winners);
@@ -1404,9 +1406,10 @@
     const bettors = Object.keys(r.bets);
     const total = bettors.reduce((a, id) => a + r.bets[id], 0);
     const last = pd.rounds[pd.rounds.length - 1];
-    if (ui.pdRound !== r.no + r.phase) { ui.pdRound = r.no + r.phase; ui.pdRes = {}; }
+    if (ui.pdRound !== r.no + r.phase) { ui.pdRound = r.no + r.phase; ui.pdRes = {}; ui.pdDraftCards = []; ui.pdPickRank = null; ui.pdFor = null; }
+    const hn = (id) => { const h = last && last.cards && last.cards[id] && PD.evalHand(last.cards[id]); return h ? ` <span class="shand">${esc(h.name)}</span>` : ''; };
     const lastHtml = last ? `<div class="sidepots">รอบที่ ${last.no}: ${Object.entries(last.delta).filter(([, d]) => d)
-      .map(([id, d]) => `${esc(last.names[id])} <span class="${toneOf(d)}">${signedFmt(d)}</span>`).join(' · ') || 'เสมอทั้งวง'}</div>` : '';
+      .map(([id, d]) => `${esc(last.names[id])} <span class="${toneOf(d)}">${signedFmt(d)}</span>${hn(id)}`).join(' · ') || 'เสมอทั้งวง'}</div>` : '';
     const me = pById(myId);
     const away = S.players.filter((p) => p.left);
     const standBanner = me && me.left ? `<div class="banner row"><span>คุณลุกจากวงแล้ว · ยอด ${signedFmt(me.net || 0)}</span>
@@ -1416,7 +1419,7 @@
         <div class="amt">${r.phase === 'bet' ? 'วางเดิมพัน' : 'เปิดไพ่'}</div>
         <div class="hint">🏦 เจ้ามือ: ${esc(banker ? banker.name : '-')} · ลง ${bettors.length} คน รวม ${fmt(total)} บาท</div>
         ${lastHtml}
-      </div>${pdHostTools()}
+      </div>${pdHostTools()}${pdCardsPanel()}
       <div class="players">${S.players.filter((p) => !p.left).map(pdRow).join('')}</div>
       ${away.length ? `<div class="away"><span>ลุกแล้ว:</span> ${away.map((p) => `${esc(p.name)} <b class="${toneOf(p.net || 0)}">${signedFmt(p.net || 0)}</b>`).join(' · ')}</div>` : ''}
       ${r.phase === 'result' ? (canRunRound() ? pdResultPanel() : '<div class="card center muted">เปิดไพ่ — รอเจ้ามือบันทึกผล…</div>') : ''}
@@ -1440,36 +1443,84 @@
     let status = isBanker ? 'เจ้ามือ' : p.sitOut ? 'พัก' : bet ? '' : 'ไม่ลงตานี้';
     let cls = 'pl' + (isBanker ? ' banker' : '') + (!isBanker && (p.sitOut || !bet) ? ' idle' : '');
     const editable = canRunRound() && r.phase === 'bet' && !isBanker && !p.sitOut;
+    const hb = r.phase === 'result' ? handBox(p.id) : null;
+    const handHtml = !hb ? '' : pdSee(p.id) ? `<div class="pdh">${cardsHtml(hb.cards, 'sm')}<span class="shand">${esc(hb.name)}</span></div>` : '<div class="pdh muted small">✅ ใส่ไพ่แล้ว</div>';
     return `<div class="${cls}" ${editable ? `data-a="pdBetFor" data-pid="${esc(p.id)}"` : ''}>
       <span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>
       <div class="nm"><b>${nameHtml(p.name)}${p.id === S.hostId ? ' <span title="คนคุมห้อง">👑</span>' : ''}${isBanker ? ' <span class="badge bank">🏦 เจ้ามือ</span>' : ''}${p.id === myId ? ' <span class="me-tag">คุณ</span>' : ''}</b>
-        <span class="st">${bet ? `<span class="bet">ลง ${fmt(bet)}</span>` : esc(status)}${editable ? ' <u class="small">แก้</u>' : ''}</span></div>
+        <span class="st">${bet ? `<span class="bet">ลง ${fmt(bet)}</span>` : esc(status)}${editable ? ' <u class="small">แก้</u>' : ''}</span>${handHtml}</div>
       <div class="stack ${toneOf(p.net || 0)}">${signedFmt(p.net || 0)}</div>
     </div>`;
+  }
+
+  // ---- Pok Deng: each person enters the cards they hold and the app judges the round ----
+  const PD_RANK_BTNS = [['A', 12], ['2', 0], ['3', 1], ['4', 2], ['5', 3], ['6', 4], ['7', 5], ['8', 6], ['9', 7], ['10', 8], ['J', 9], ['Q', 10], ['K', 11]];
+  const PD_SUIT_BTNS = [['♠', 0, 's'], ['♥', 1, 'h'], ['♦', 2, 'd'], ['♣', 3, 'c']];
+  const handBox = (id) => { const c = S.pd.round.cards && S.pd.round.cards[id]; return c ? PD.evalHand(c) : null; };
+  // the app's verdicts only exist once the cards are open, so nobody can read them early
+  const pdAuto = () => (PD.revealed(S) ? PD.autoResults(S) : {});
+  const pdEff = (id) => (ui.pdRes[id] && ui.pdRes[id].r ? ui.pdRes[id] : pdAuto()[id] || {});
+  const pdSee = (id) => id === myId || PD.revealed(S);
+
+  function pdCardsPanel() {
+    const r = S.pd.round;
+    if (r.phase !== 'result') return '';
+    const target = ui.pdFor && canRunRound() ? ui.pdFor : myId;
+    const p = pById(target);
+    if (!p || p.left || (target !== S.pd.bankerId && !r.bets[target])) return '';
+    const own = target === myId;
+    const title = own ? '🃏 ไพ่ของคุณ' : `🃏 ไพ่ของ ${esc(p.name)}`;
+    const back = own ? '' : `<u class="small" data-a="pdFor" data-pid="${esc(myId)}">← กลับมาใส่ไพ่ของฉัน</u>`;
+    const revealBtn = canRunRound() && !PD.revealed(S) ? `<button class="sm ghost" data-a="cmd" data-c="pdReveal">👁 เปิดไพ่ทุกคนเลย</button>` : '';
+    const saved = handBox(target);
+    if (saved) {
+      return `<div class="card pdcards"><h2>${title}</h2>${back}
+        <div class="pdh big">${cardsHtml(saved.cards, 'lg')}<b class="gold">${esc(saved.name)}</b></div>
+        <div class="row" style="margin-top:8px"><button class="sm ghost" data-a="pdCardsEdit" data-pid="${esc(target)}">✏️ แก้ไพ่</button>${revealBtn}</div>
+        <p class="muted small" style="margin:6px 0 0">${PD.revealed(S) ? 'ทุกคนใส่ไพ่ครบแล้ว — เปิดไพ่' : 'ไพ่ถูกซ่อนไว้ จะเปิดให้ทุกคนเห็นเมื่อใส่ครบ หรือเจ้ามือกดเปิด'}</p></div>`;
+    }
+    const draft = ui.pdDraftCards || [];
+    const dh = draft.length >= 2 ? PD.evalHand(draft) : null;
+    const slots = draft.map((c, i) => `<span class="pdslot">${cardHtml(c, 'sm')}<button class="pdx" data-a="pdCardDel" data-i="${i}" aria-label="เอาออก">✕</button></span>`).join('')
+      + '<span class="pc sm slot"></span>'.repeat(Math.max(0, 2 - draft.length));
+    const ranks = PD_RANK_BTNS.map(([l, v]) => `<button class="${ui.pdPickRank === v ? 'on' : ''}" data-a="pdRank" data-v="${v}">${l}</button>`).join('');
+    const suits = PD_SUIT_BTNS.map(([l, v, k]) => `<button class="su-${k}" data-a="pdSuit" data-v="${v}" ${ui.pdPickRank == null ? 'disabled' : ''}>${l}</button>`).join('');
+    return `<div class="card pdcards"><h2>${title}</h2>${back}
+      <p class="muted small" style="margin:0 0 6px">กดค่าไพ่ แล้วกดดอก ทีละใบ (2–3 ใบ) ระบบจะนับแต้มและตัดสินให้</p>
+      <div class="pddraft">${slots}</div>
+      <div class="pdranks">${ranks}</div><div class="pdsuits">${suits}</div>
+      <div class="pdprev">${dh ? `<b class="gold">${esc(dh.name)}</b>` : '<span class="muted">ใส่ให้ครบอย่างน้อย 2 ใบ</span>'}</div>
+      <div class="row"><button class="primary" style="flex:1" data-a="pdCardsGo" ${draft.length >= 2 ? '' : 'disabled'}>ยืนยันไพ่ (${draft.length} ใบ)</button>${revealBtn}</div></div>`;
   }
 
   function pdResultPanel() {
     const r = S.pd.round;
     const rows = Object.keys(r.bets).map((id) => {
-      const p = pById(id); const x = ui.pdRes[id] || {}; const m = x.m || 1;
+      const p = pById(id); const x = pdEff(id); const m = x.m || 1;
+      const hb = handBox(id); const seen = hb && PD.revealed(S);
+      const auto = !(ui.pdRes[id] && ui.pdRes[id].r) && pdAuto()[id];
       const d = x.r === 'win' ? r.bets[id] * m : x.r === 'lose' ? -r.bets[id] * m : 0;
       const rb = (k) => `<button class="${x.r === k ? 'on ' + k : ''}" data-a="pdRes" data-pid="${esc(id)}" data-r="${k}">${RES_LABEL[k]}</button>`;
       const mb = PD.MULTS.map((k) => `<button class="${x.r && x.r !== 'tie' && m === k ? 'on' : ''}" data-a="pdRes" data-pid="${esc(id)}" data-m="${k}" ${x.r === 'tie' ? 'disabled' : ''}>×${k}</button>`).join('');
       return `<div class="pdres"><div class="top"><b>${esc(p ? p.name : '?')}</b><span class="muted small">ลง ${fmt(r.bets[id])}</span>
         <span class="${toneOf(d)}">${x.r ? signedFmt(d) : ''}</span></div>
+        ${seen ? `<div class="pdh">${cardsHtml(hb.cards, 'sm')}<span class="shand">${esc(hb.name)}</span>${auto ? ' <span class="muted small">🤖 ระบบตัดสิน</span>' : ''}</div>` : ''}
+        ${canRunRound() && !hb ? `<div class="small" style="margin:2px 0 6px"><u data-a="pdFor" data-pid="${esc(id)}">🃏 ใส่ไพ่ให้ ${esc(p ? p.name : '')}</u></div>` : ''}
         <div class="seg rseg">${rb('lose')}${rb('tie')}${rb('win')}</div><div class="seg mseg">${mb}</div></div>`;
     }).join('');
-    const ready = Object.keys(r.bets).every((id) => ui.pdRes[id] && ui.pdRes[id].r);
+    const ready = Object.keys(r.bets).every((id) => pdEff(id).r);
     const bank = Object.keys(r.bets).reduce((a, id) => {
-      const x = ui.pdRes[id]; if (!x || !x.r || x.r === 'tie') return a;
+      const x = pdEff(id); if (!x || !x.r || x.r === 'tie') return a;
       return a - (x.r === 'win' ? 1 : -1) * r.bets[id] * (x.m || 1);
     }, 0);
-    return `<div class="card"><h2>บันทึกผล (เทียบกับเจ้ามือ)</h2>
+    const bh = handBox(S.pd.bankerId);
+    const bankHand = bh && PD.revealed(S) ? `<div class="pdh" style="margin-bottom:8px">🏦 เจ้ามือ ${cardsHtml(bh.cards, 'sm')}<span class="shand">${esc(bh.name)}</span></div>` : '';
+    return `<div class="card"><h2>บันทึกผล (เทียบกับเจ้ามือ)</h2>${bankHand}
       <div class="row small muted" style="margin-bottom:6px"><span style="flex:none">ทั้งวง:</span>
         <button class="sm" data-a="pdAll" data-r="lose">แพ้หมด</button><button class="sm" data-a="pdAll" data-r="win">ชนะหมด</button></div>
       ${rows}
       <div class="pdbank">🏦 เจ้ามือรอบนี้ <b class="${toneOf(bank)}">${signedFmt(bank)}</b></div>
-      <p class="muted small" style="margin:4px 0 8px">×2 = สองเด้ง/ป๊อกเด้ง · ×3 = สามเด้ง/เซียน/เรียง · ×5 = ตอง (ใช้ตัวคูณของมือที่ชนะ)</p>
+      <p class="muted small" style="margin:4px 0 8px">×2 = สองเด้ง/ป๊อกเด้ง · ×3 = สามเด้ง/เซียน/เรียง · ×5 = ตอง/สเตรทฟลัช (ใช้ตัวคูณของมือที่ชนะ) · ถ้าทุกคนใส่ไพ่ ระบบตัดสินให้ แก้เองได้</p>
       <button class="primary" style="width:100%" data-a="pdSettle" ${ready ? '' : 'disabled'}>ยืนยันผลรอบนี้</button></div>`;
   }
 
@@ -1495,7 +1546,7 @@
     } else {
       inner = canRunRound()
         ? `<div class="row"><button class="ghost" style="flex:none" data-a="cmd" data-c="pdReopen">↩ แก้เดิมพัน</button><div class="waitbar">บันทึกผลด้านบน แล้วกดยืนยัน</div></div>`
-        : `<div class="waitbar">เปิดไพ่! ${r.bets[myId] ? `คุณลง <b>${fmt(r.bets[myId])}</b> · ` : ''}รอเจ้ามือบันทึกผล</div>`;
+        : `<div class="waitbar">เปิดไพ่! ${r.bets[myId] ? `คุณลง <b>${fmt(r.bets[myId])}</b> · ` : ''}ใส่ไพ่ของคุณด้านบน ระบบจะตัดสินให้</div>`;
     }
     return `<div class="actbar"><div class="in">${inner}</div></div>`;
   }
@@ -1572,11 +1623,14 @@
       const nm = (id) => esc(r.names[id] || (pById(id) || {}).name || '?');
       const lines = Object.keys(r.bets).map((id) => {
         const x = r.results[id];
-        return `<span>${nm(id)} ลง ${fmt(r.bets[id])} · ${RES_LABEL[x.r]}${x.r !== 'tie' && x.m > 1 ? ` ×${x.m}` : ''} <b class="${toneOf(r.delta[id])}">${signedFmt(r.delta[id])}</b></span>`;
+        const hh = r.cards && r.cards[id] && PD.evalHand(r.cards[id]);
+        return `<span>${nm(id)} ลง ${fmt(r.bets[id])} · ${RES_LABEL[x.r]}${x.r !== 'tie' && x.m > 1 ? ` ×${x.m}` : ''} <b class="${toneOf(r.delta[id])}">${signedFmt(r.delta[id])}</b>${hh ? `<br><span class="pdh">${cardsHtml(hh.cards, 'sm')}<span class="shand">${esc(hh.name)}</span></span>` : ''}</span>`;
       }).join('');
+      const bk = r.cards && r.cards[r.bankerId] && PD.evalHand(r.cards[r.bankerId]);
+      const bankLine = bk ? `<span>🏦 ${nm(r.bankerId)}<br><span class="pdh">${cardsHtml(bk.cards, 'sm')}<span class="shand">${esc(bk.name)}</span></span></span>` : '';
       const mine = r.delta[myId] != null ? ` · คุณ <span class="${toneOf(r.delta[myId])}">${signedFmt(r.delta[myId])}</span>` : '';
       return `<details class="hand" ${i === 0 ? 'open' : ''}><summary><b>รอบที่ ${r.no}</b> · 🏦 ${nm(r.bankerId)} <span class="${toneOf(r.delta[r.bankerId])}">${signedFmt(r.delta[r.bankerId])}</span>${mine}</summary>
-        <div class="hdelta pdlines">${lines}</div></details>`;
+        <div class="hdelta pdlines">${bankLine}${lines}</div></details>`;
     }).join('');
     return ['ประวัติแต่ละรอบ', `${items || '<p class="muted">ยังไม่มีรอบที่จบ</p>'}
       <p class="center small" style="margin-top:12px"><u data-a="sheet" data-v="log">ดูบันทึกเหตุการณ์ทั้งหมด</u> <span class="muted">· เก็บ 50 รอบล่าสุด</span></p>`];
@@ -2191,17 +2245,36 @@
         if (v != null && v !== '') send({ c: 'pdBet', pid: d.pid, amount: Number(v) });
         break;
       }
+      case 'pdFor': ui.pdFor = d.pid === myId ? null : d.pid; ui.pdDraftCards = []; ui.pdPickRank = null; render(); break;
+      case 'pdRank': ui.pdPickRank = Number(d.v); render(); break;
+      case 'pdSuit': {
+        if (ui.pdPickRank == null) break;
+        const c = Number(d.v) * 13 + ui.pdPickRank; const dr = ui.pdDraftCards || (ui.pdDraftCards = []);
+        if (dr.includes(c)) { toast('ใบนี้เลือกไปแล้ว'); break; }
+        if (dr.length >= 3) { toast('ป๊อกเด้งมีไพ่ได้สูงสุด 3 ใบ'); break; }
+        dr.push(c); ui.pdPickRank = null; render(); break;
+      }
+      case 'pdCardDel': (ui.pdDraftCards || []).splice(Number(d.i), 1); render(); break;
+      case 'pdCardsGo': send({ c: 'pdCards', pid: ui.pdFor || myId, cards: ui.pdDraftCards || [] }); break;
+      case 'pdCardsEdit':
+        ui.pdDraftCards = ((S.pd.round.cards || {})[d.pid] || []).slice(); ui.pdPickRank = null;
+        send({ c: 'pdCards', pid: d.pid, cards: [] }); break;
       case 'pdRes': {
-        const cur = ui.pdRes[d.pid] || { m: 1 };
+        const cur = Object.assign({ m: 1 }, pdEff(d.pid));
         if (d.r) cur.r = d.r;
         if (d.m) { cur.m = Number(d.m); if (!cur.r || cur.r === 'tie') cur.r = cur.r || 'win'; }
         ui.pdRes[d.pid] = cur; render();
         break;
       }
       case 'pdAll':
-        Object.keys(S.pd.round.bets).forEach((id) => { ui.pdRes[id] = { r: d.r, m: (ui.pdRes[id] && ui.pdRes[id].m) || 1 }; });
+        Object.keys(S.pd.round.bets).forEach((id) => { ui.pdRes[id] = { r: d.r, m: pdEff(id).m || 1 }; });
         render(); break;
-      case 'pdSettle': send({ c: 'pdSettle', results: ui.pdRes }); break;
+      case 'pdSettle': {
+        const res = {};
+        Object.keys(S.pd.round.bets).forEach((id) => { res[id] = pdEff(id); });
+        send({ c: 'pdSettle', results: res });
+        break;
+      }
       case 'pdNet': {
         const p = pById(d.pid);
         const v = prompt(`ยอดได้/เสียของ ${p.name} (ติดลบ = เสีย)`, p.net || 0);
