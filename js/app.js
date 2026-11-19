@@ -1536,11 +1536,11 @@
         const base = S.settings.defaultBet || 10;
         const cur = r.bets[myId] || 0;
         const draft = ui.pdDraft != null ? ui.pdDraft : String(cur || base);
-        const quick = [base, base * 2, base * 5, base * 10].map((v) => `<button data-a="pdQuick" data-v="${v}">${fmt(v)}</button>`).join('');
+        const quick = [base, base * 2, base * 5, base * 10].map((v) => `<button data-a="pdQuick" data-v="${v}">+${fmt(v)}</button>`).join('');
         inner = `<div class="who"><span>${cur ? `ลงไว้ <b>${fmt(cur)}</b> บาท` : '<b>วางเดิมพันรอบนี้</b>'}</span><span>ยอดคุณ <span class="${toneOf(me.net || 0)}">${signedFmt(me.net || 0)}</span></span></div>
           <div class="row"><input id="pdBetInput" type="number" inputmode="numeric" enterkeyhint="done" min="0" value="${esc(draft)}" aria-label="เดิมพัน">
             <button class="primary" style="flex:none" data-a="pdBetGo" id="pdBetGo">${cur ? 'แก้เป็น' : 'ลง'} ${fmt(Number(draft) || 0)}</button></div>
-          <div class="quick pdquick">${quick}<button class="ghost" data-a="pdSkip">ไม่ลง</button></div>${dealBtn}`;
+          <div class="quick pdquick">${quick}<button class="ghost" data-a="pdClear">ล้าง</button><button class="ghost" data-a="pdSkip">ไม่ลง</button></div>${dealBtn}`;
       } else if (dealBtn) inner = dealBtn;
       else inner = `<div class="waitbar">${me && me.id === pd.bankerId ? 'คุณเป็นเจ้ามือ — รอทุกคนลงเดิมพัน' : 'รอผู้เล่นลงเดิมพัน…'}</div>`;
     } else {
@@ -2231,7 +2231,12 @@
         if (confirm(msg)) { ui.sheet = null; send({ c: 'stand', pid: d.pid, v: true }); }
         break;
       }
-      case 'pdQuick': ui.pdDraft = d.v; { const i = document.getElementById('pdBetInput'); if (i) i.value = d.v; } syncPdBet(); break;
+      // the chips add up: 10 twice makes 20 (the first tap starts from 0, not from the suggested amount)
+      case 'pdQuick': {
+        const v = String((ui.pdDraft == null ? 0 : Number(ui.pdDraft) || 0) + Number(d.v));
+        ui.pdDraft = v; const i = document.getElementById('pdBetInput'); if (i) i.value = v; syncPdBet(); break;
+      }
+      case 'pdClear': ui.pdDraft = '0'; { const i = document.getElementById('pdBetInput'); if (i) i.value = '0'; } syncPdBet(); break;
       case 'pdBetGo': {
         const v = Math.floor(Number(ui.pdDraft != null ? ui.pdDraft : document.getElementById('pdBetInput').value) || 0);
         ui.pdDraft = null;

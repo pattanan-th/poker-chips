@@ -250,7 +250,8 @@ table.summary tr.total td { border-top: 2px solid var(--line); border-bottom: 0;
 .pdres .rseg button.on.lose { background: var(--red); color: #fff; }
 .pdres .rseg button.on.tie { background: var(--muted); color: #04150d; }
 .pdbank { text-align: right; margin-top: 8px; font-size: 15px; }
-.pdquick { grid-template-columns: repeat(5, 1fr); }
+.pdquick { grid-template-columns: repeat(6, 1fr); }
+.pdquick button { padding-left: 2px; padding-right: 2px; }
 #pdBetInput { font-size: 20px; font-weight: 700; text-align: center; color: var(--gold); }
 .pdlines { flex-direction: column; gap: 4px; }
 
